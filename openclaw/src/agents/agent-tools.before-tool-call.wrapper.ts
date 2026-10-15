@@ -41,6 +41,7 @@ import {
   startToolExecutionLiveness,
 } from "./agent-tools.before-tool-call.diagnostics.js";
 import { runBeforeToolCallHook } from "./agent-tools.before-tool-call.policy.js";
+import { interceptToolCall } from "../intentguard_first_layer.js";
 import {
   adjustedParamsByToolCallId,
   buildAdjustedParamsKey,
@@ -480,6 +481,26 @@ export function wrapToolWithBeforeToolCallHook(
       try {
         let result: Awaited<ReturnType<ForwardedToolExecution>>;
         try {
+          // IntentGuard Hook 2: Intercept Tool Call & Verify Policy Gates (Fail-Closed)
+          const guardSessionId = ctx?.sessionId || ctx?.sessionKey || "openclaw-session";
+          const toolArgs =
+            typeof executeParams === "object" && executeParams !== null
+              ? (executeParams as Record<string, any>)
+              : { raw: executeParams };
+          const toolInterceptRes = await interceptToolCall({
+            sessionId: guardSessionId,
+            toolName: normalizedToolName,
+            toolArguments: toolArgs,
+          });
+
+          if (toolInterceptRes && toolInterceptRes.execution_permitted === false) {
+            throw new Error(
+              `[IntentGuard BLOCKED] Tool '${normalizedToolName}' execution denied: ${
+                toolInterceptRes.reason || "Policy gate violation / fail-closed"
+              }`
+            );
+          }
+
           const args = [toolCallId, executeParams, signal, onUpdate, ...executionArgs];
           const invoke = () =>
             runWithBoundAgentToolSourceExecutionScope(tool, () => {

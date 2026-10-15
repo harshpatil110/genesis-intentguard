@@ -3,7 +3,10 @@
   "version": "2026.10.3",
   "openclaw": {
     "updateAdmissionProtocol": 1,
-    "databaseEngines": ["sqlite", "postgres"],
+    "databaseEngines": [
+      "sqlite",
+      "postgres"
+    ],
     "schemaVersions": {
       "state": 24,
       "agent": 27
@@ -2303,6 +2306,7 @@
     "@silvia-odwyer/photon-node": "0.3.4",
     "@trycua/cua-driver": "0.34.0",
     "acorn": "8.19.0",
+    "axios": "^1.20.0",
     "chalk": "6.0.1",
     "chrome-devtools-mcp": "1.10.1",
     "clawpdf": "0.3.2",

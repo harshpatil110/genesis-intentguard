@@ -1179,15 +1179,26 @@ export async function runTsdownBuildInvocation(
     }
   }
 
+  try {
+    stdout?.on?.("error", () => {});
+    stderr?.on?.("error", () => {});
+    process.stdout?.on?.("error", () => {});
+    process.stderr?.on?.("error", () => {});
+  } catch {}
+
   child.stdout?.on("data", (chunk) => {
     markOutput();
     scanner.append(chunk);
-    stdout.write(chunk);
+    try {
+      stdout.write(chunk);
+    } catch {}
   });
   child.stderr?.on("data", (chunk) => {
     markOutput();
     scanner.append(chunk);
-    stderr.write(chunk);
+    try {
+      stderr.write(chunk);
+    } catch {}
   });
 
   const heartbeat =

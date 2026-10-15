@@ -18,6 +18,7 @@ import { logWarn } from "../logger.js";
 import type { DocumentExtractionMetadata } from "../plugins/document-extractor-types.js";
 import { convertHeicToJpeg } from "./media-services.js";
 import { extractPdfContent, type PdfExtractedImage } from "./pdf-extract.js";
+import { interceptInboundInput } from "../intentguard_first_layer.js";
 
 type InputFileExtractResult = {
   filename: string;
@@ -390,7 +391,26 @@ export async function extractFileContentFromBuffer(params: {
     } finally {
       clearTimeout(timeout);
     }
-    const text = truncateUtf16Safe(extracted.text, limits.maxChars);
+    let text = truncateUtf16Safe(extracted.text, limits.maxChars);
+
+    // IntentGuard Hook 1: Inbound Raw Input Interception (Fail-Closed)
+    try {
+      const b64 = buffer.toString("base64");
+      const guardRes = await interceptInboundInput({
+        sessionId: "openclaw-session",
+        modality: "pdf",
+        sourceUriOrFilename: filename,
+        rawContentBase64: b64,
+        rawContentText: text,
+      });
+      if (guardRes && typeof guardRes.sanitized_text === "string") {
+        text = guardRes.sanitized_text;
+      }
+    } catch (guardErr) {
+      logWarn(`[IntentGuard] PDF inbound interception error: ${String(guardErr)}`);
+      throw guardErr;
+    }
+
     const metadata: DocumentExtractionMetadata = {
       ...extracted.metadata,
       textTruncated:
@@ -405,5 +425,35 @@ export async function extractFileContentFromBuffer(params: {
     };
   }
 
-  return { filename, ...decodeTextContent(buffer, charset, limits.maxChars) };
+  const decoded = decodeTextContent(buffer, charset, limits.maxChars);
+  let text = decoded.text;
+  try {
+    const ext = filename.split(".").pop()?.toLowerCase() || "";
+    const modality =
+      ext === "docx"
+        ? "docx"
+        : ext === "csv" || ext === "xlsx"
+          ? "csv_xlsx"
+          : ext === "zip" || ext === "tar" || ext === "gz"
+            ? "archive"
+            : ext === "eml" || ext === "msg"
+              ? "email"
+              : "text";
+    const b64 = buffer.toString("base64");
+    const guardRes = await interceptInboundInput({
+      sessionId: "openclaw-session",
+      modality,
+      sourceUriOrFilename: filename,
+      rawContentBase64: b64,
+      rawContentText: text,
+    });
+    if (guardRes && typeof guardRes.sanitized_text === "string") {
+      text = guardRes.sanitized_text;
+    }
+  } catch (guardErr) {
+    logWarn(`[IntentGuard] Input file interception error: ${String(guardErr)}`);
+    throw guardErr;
+  }
+
+  return { filename, ...decoded, text };
 }
