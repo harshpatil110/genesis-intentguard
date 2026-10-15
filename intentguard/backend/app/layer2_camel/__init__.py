@@ -4,8 +4,8 @@ IntentGuard Layer 2 CaMeL Dual-LLM & Authority Plane
 GENESIS 2.0 | Track: EVA 03 | PS 01
 
 Provides Step-0 Cryptographic Intent Contracts (HMAC-SHA256 Authority Lock),
-Context-Aware Business Language Disambiguation, Surgical Redaction, and
-deterministic Hyperledger Fabric diff hashing.
+Context-Aware Business Language Disambiguation, Surgical Redaction, deterministic
+Hyperledger Fabric diff hashing, and the CaMeL Data Plane Quarantined Reader (Q-LLM).
 """
 
 from app.layer2_camel.intent_contract import (
@@ -34,6 +34,18 @@ from app.layer2_camel.surgical_redactor import (
     compute_canonical_diff_sha256,
     surgical_redactor,
 )
+from app.layer2_camel.schemas import (
+    EmailExtractionSchema,
+    InvoiceExtractionSchema,
+    InvoiceLineItem,
+    WebExtractionSchema,
+)
+from app.layer2_camel.quarantined_reader import (
+    SPOTLIGHT_END,
+    SPOTLIGHT_START,
+    QuarantinedReaderLLM,
+    quarantined_reader,
+)
 
 __all__ = [
     # Intent Contract
@@ -59,4 +71,14 @@ __all__ = [
     "XRayDiffSegment",
     "compute_canonical_diff_sha256",
     "surgical_redactor",
+    # CaMeL Data Plane Schemas
+    "InvoiceLineItem",
+    "InvoiceExtractionSchema",
+    "EmailExtractionSchema",
+    "WebExtractionSchema",
+    # Quarantined Reader
+    "QuarantinedReaderLLM",
+    "quarantined_reader",
+    "SPOTLIGHT_START",
+    "SPOTLIGHT_END",
 ]
