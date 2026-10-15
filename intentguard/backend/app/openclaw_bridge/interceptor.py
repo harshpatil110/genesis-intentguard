@@ -53,6 +53,10 @@ from app.layer1_decloaker.web_dom_decloaker import (
     WebDOMDeCloaker,
     web_dom_decloaker,
 )
+from app.layer2_camel.business_disambiguator import (
+    BusinessCommandDisambiguator,
+    business_disambiguator,
+)
 from app.layer2_camel.intent_contract import (
     Step0IntentContract,
     compile_step0_intent_contract,
@@ -648,20 +652,41 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         except Exception:
             pass
 
-    # ── 3b. Baseline threat scan on visible text ─────────────────────────────
-    injection_findings = _detect_injections(text_to_scan)
-    if injection_findings:
+    # ── 3c. Context-Aware Business vs Hacker Command Disambiguator (Task 11) ─
+    disambig_res = business_disambiguator.disambiguate_document(
+        text=text_to_scan,
+        document_id=intercept_id,
+        po_hint=req.metadata.get("po_id") or req.metadata.get("po_reference"),
+    )
+
+    if disambig_res.threat_detected:
         threat_detected = True
-        for rid in [10, 11]:
+        for rid in disambig_res.risk_category_ids:
             if rid not in risk_category_ids:
                 risk_category_ids.append(rid)
-        for inf in injection_findings:
-            cloaked_threats.append(inf)
 
-    sanitized_text = text_to_scan
+        for flagged_span in disambig_res.malicious_overrides_flagged:
+            surgical_redactions.append({
+                "original": flagged_span.text,
+                "replacement": "[REDACTED_AUTHORITY_OVERRIDE]",
+                "risk_ids": flagged_span.triggered_risk_ids,
+                "reason": flagged_span.reason,
+            })
+            cloaked_threats.append({
+                "pattern": "MALICIOUS_AUTHORITY_OVERRIDE",
+                "match": flagged_span.text,
+                "reason": flagged_span.reason,
+                "risk_category_ids": flagged_span.triggered_risk_ids,
+            })
+
+    sanitized_text = disambig_res.preserved_text_for_reader
+
+    # ── 3d. Baseline pattern redactions (if any remain) ─────────────────────
     for pat in _INJECTION_PATTERNS:
         if pat.search(sanitized_text):
             original = pat.search(sanitized_text).group(0)  # type: ignore[union-attr]
+            if "quote" in original.lower() or "draft" in original.lower():
+                continue
             sanitized_text = pat.sub("[REDACTED_INJECTION]", sanitized_text)
             surgical_redactions.append({
                 "original": original,
@@ -708,6 +733,8 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
             "threats_found": len(cloaked_threats),
             "redactions": len(surgical_redactions),
             "raw_sha256": raw_evidence_sha256,
+            "false_positives_prevented_count": disambig_res.false_positives_prevented_count,
+            "safe_business_directives_count": len(disambig_res.safe_business_directives_kept),
         },
     )
     await telemetry_manager.broadcast_event(event)
