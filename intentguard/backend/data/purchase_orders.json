@@ -2,33 +2,48 @@
   "purchase_orders": {
     "PO-402": {
       "po_id": "PO-402",
+      "aliases": ["PO-402", "PO #402", "PO#402", "402"],
       "buyer_id": "buyer-01",
+      "buyer_enterprise_id": "BUYER-ENTERPRISE-01",
       "supplier_id": "supplier-01",
-      "vendor_name": "Bharat Precision Components Pvt Ltd",
+      "supplier_enterprise_id": "ACME-SUPPLIER-88",
+      "supplier_name": "Acme Industrial Supplies Ltd.",
       "approved_amount_inr": 4000.0,
-      "tolerance_inr": 0.0,
       "currency": "INR",
-      "approved_bank_iban": "HDFC0001234_99887766",
-      "approved_bank_name": "HDFC Bank Corporate Branch Mumbai",
-      "delivery_receipt_id": "DR-402-VERIFIED",
-      "delivery_status": "VERIFIED",
-      "allowed_payment_terms_days": [7, 14, 15, 30],
-      "valid_quote_references": ["QT-2026-402", "QT-101"]
+      "approved_bank_account": "HDFC0001234_99887766",
+      "delivery_receipt": "VERIFIED",
+      "allowed_invoices": ["INV-402"],
+      "origin": "TRUSTED_PO_DB"
     },
-    "PO-509": {
-      "po_id": "PO-509",
+    "PO-501": {
+      "po_id": "PO-501",
+      "aliases": ["PO-501", "PO #501", "501"],
       "buyer_id": "buyer-01",
+      "buyer_enterprise_id": "BUYER-ENTERPRISE-01",
       "supplier_id": "supplier-02",
-      "vendor_name": "Apex Industrial Logistics",
-      "approved_amount_inr": 12500.0,
-      "tolerance_inr": 250.0,
+      "supplier_enterprise_id": "GLOBAL-LOGISTICS-02",
+      "supplier_name": "Global Logistics Pvt Ltd",
+      "approved_amount_inr": 15000.0,
       "currency": "INR",
-      "approved_bank_iban": "ICIC0005678_11223344",
-      "approved_bank_name": "ICICI Bank BKC Branch",
-      "delivery_receipt_id": "DR-509-VERIFIED",
-      "delivery_status": "VERIFIED",
-      "allowed_payment_terms_days": [15, 30, 45],
-      "valid_quote_references": ["QT-2026-509"]
+      "approved_bank_account": "ICIC0005678_11223344",
+      "delivery_receipt": "PENDING",
+      "allowed_invoices": ["INV-501"],
+      "origin": "TRUSTED_PO_DB"
+    },
+    "PO-603": {
+      "po_id": "PO-603",
+      "aliases": ["PO-603", "PO #603", "603"],
+      "buyer_id": "buyer-02",
+      "buyer_enterprise_id": "BUYER-ENTERPRISE-02",
+      "supplier_id": "supplier-03",
+      "supplier_enterprise_id": "RAPID-PARTS-33",
+      "supplier_name": "Rapid Parts Solutions Inc.",
+      "approved_amount_inr": 8500.0,
+      "currency": "INR",
+      "approved_bank_account": "AXIS0009876_55443322",
+      "delivery_receipt": "VERIFIED",
+      "allowed_invoices": ["INV-603A", "INV-603B"],
+      "origin": "TRUSTED_PO_DB"
     }
   }
 }

@@ -30,6 +30,13 @@ from app.layer3_policy.resource_budget import (
     compute_tool_signature,
     resource_budget_enforcer,
 )
+from app.layer3_policy.po_verifier import (
+    PurchaseOrderVerifier,
+    POVerificationResult,
+    StepBackApprovalCardPayload,
+    TrustedPORecord,
+    purchase_order_verifier,
+)
 
 __all__ = [
     "BudgetCheckResult",
@@ -51,4 +58,10 @@ __all__ = [
     "FINANCIAL_DESTINATION_SINKS",
     "AMOUNT_ARGUMENT_KEYS",
     "CREDENTIAL_LEAK_REGEXES",
+    # Task 17 — PO-vs-Invoice Verifier
+    "PurchaseOrderVerifier",
+    "POVerificationResult",
+    "StepBackApprovalCardPayload",
+    "TrustedPORecord",
+    "purchase_order_verifier",
 ]

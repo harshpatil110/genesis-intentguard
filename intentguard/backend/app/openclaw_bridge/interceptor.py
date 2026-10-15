@@ -77,6 +77,11 @@ from app.layer3_policy import (
     PolicyEvaluationResult,
     deterministic_policy_gateway,
 )
+from app.layer3_policy.po_verifier import (
+    PurchaseOrderVerifier,
+    POVerificationResult,
+    purchase_order_verifier,
+)
 from app.layer3_policy.resource_budget import resource_budget_enforcer
 from app.openclaw_bridge.models import (
     InboundInterceptRequest,
@@ -843,6 +848,79 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
 
     eval_res = deterministic_policy_gateway.evaluate_tool_call(eval_req)
 
+    # ── 2. Task 17 — Supply-Chain PO-vs-Invoice Bank & Amount Verification ───
+    # For payment tools, cross-check extracted invoice fields against
+    # TRUSTED_PO_DB to block spoofed IBANs, inflated amounts, and
+    # unverified delivery receipts before execution is permitted.
+    _PAYMENT_TOOLS_PO_CHECK = frozenset({
+        "schedule_payment", "schedule_verified_payment",
+        "initiate_payment", "transfer_funds",
+        "process_invoice_payment", "pay_vendor", "wire_transfer",
+    })
+    norm_tool_name = req.tool_name.lower().strip()
+    if eval_res.execution_permitted and norm_tool_name in _PAYMENT_TOOLS_PO_CHECK:
+        # Check if any payment-relevant arguments exist in the tool call
+        po_relevant_keys = {
+            "po_id", "po_number", "po_ref", "amount_inr", "amount",
+            "iban_account", "beneficiary_iban", "bank_account",
+            "supplier_id", "vendor_id",
+        }
+        tool_args: dict = dict(req.tool_arguments or {})
+        # If explicit po_id is missing, attempt to extract from contract prompt
+        if not (tool_args.get("po_id") or tool_args.get("po_number") or tool_args.get("po_ref")):
+            if contract_data:
+                prompt_text = str(contract_data.get("user_prompt", ""))
+                po_match = re.search(r"PO[ -#]*(\d+)", prompt_text, re.I)
+                if po_match:
+                    tool_args["po_id"] = f"PO-{po_match.group(1)}"
+        has_po_args = bool(po_relevant_keys & set(tool_args.keys()))
+        if has_po_args:
+            po_res = purchase_order_verifier.verify_invoice_against_po(
+                invoice_data=tool_args,
+                provenance_map=None,
+            )
+            if not po_res.execution_permitted:
+                # Override Gateway approval with PO block
+                po_card_id = _new_id()
+                po_event = _telemetry_event(
+                    session_id=req.session_id,
+                    hook_stage="HOOK_2_TOOL_CALL",
+                    modality_or_tool=req.tool_name,
+                    threat_detected=True,
+                    action_taken=po_res.action_taken,
+                    risk_category_ids=po_res.risk_category_ids,
+                    summary=f"[PO-VERIFIER BLOCKED] {po_res.reason}",
+                    details={
+                        "intercept_id": intercept_id,
+                        "tool": req.tool_name,
+                        "execution_permitted": False,
+                        "reason": po_res.reason,
+                        "action_taken": po_res.action_taken,
+                        "po_id": po_res.po_id,
+                        "discrepancies": po_res.discrepancies,
+                        "approval_card_id": po_card_id,
+                        "approval_card": po_res.approval_card.model_dump() if po_res.approval_card else None,
+                    },
+                )
+                await telemetry_manager.broadcast_event(po_event)
+                logger.warning(
+                    "Hook2 [%s] session=%s tool=%s BLOCKED by PO verifier: %s",
+                    intercept_id, req.session_id, req.tool_name, po_res.reason,
+                )
+                return ToolCallInterceptResponse(
+                    intercept_id=intercept_id,
+                    session_id=req.session_id,
+                    execution_permitted=False,
+                    requires_human_approval_card=True,
+                    approval_card_id=po_card_id,
+                    action_taken=po_res.action_taken,
+                    policy_reference="TASK17_PO_VERIFIER_RISK_10_16_18",
+                    reason=po_res.reason,
+                    execution_token_hmac=None,
+                    risk_category_ids=po_res.risk_category_ids,
+                    threat_detected=True,
+                )
+
     card_id = _new_id() if eval_res.requires_human_approval_card else None
 
     response = ToolCallInterceptResponse(
@@ -858,6 +936,7 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
         risk_category_ids=eval_res.risk_category_ids,
         threat_detected=eval_res.threat_detected,
     )
+
 
     event = _telemetry_event(
         session_id=req.session_id,
