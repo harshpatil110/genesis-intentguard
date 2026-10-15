@@ -71,6 +71,12 @@ from app.layer2_camel.intent_contract import (
     intent_contract_registry,
     verify_tool_against_contract,
 )
+from app.layer3_policy import (
+    DeterministicPolicyGateway,
+    PolicyEvaluationRequest,
+    PolicyEvaluationResult,
+    deterministic_policy_gateway,
+)
 from app.layer3_policy.resource_budget import resource_budget_enforcer
 from app.openclaw_bridge.models import (
     InboundInterceptRequest,
@@ -166,6 +172,14 @@ _MZ_MAGIC = b"MZ"
 # ---------------------------------------------------------------------------
 
 session_taint_registry: Dict[str, bool] = {}
+
+
+class OpenClawInterceptorBridge:
+    """Active session registry and interceptor bridge coordinator."""
+    session_intent_contracts: Dict[str, dict] = {}
+
+
+session_intent_contracts = OpenClawInterceptorBridge.session_intent_contracts
 
 
 # ---------------------------------------------------------------------------
@@ -811,176 +825,68 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
             threat_detected=True,
         )
 
-    # ── 0b. Step-0 Cryptographic Intent Contract Verification ─────────────────
-    contract = intent_contract_registry.get_contract(req.session_id)
-    if contract is not None or req.intent_hmac_hash is not None:
-        if contract is None:
-            # Provided an HMAC hash but no contract is registered for this session
-            event = _telemetry_event(
-                session_id=req.session_id,
-                hook_stage="HOOK_2_TOOL_CALL",
-                modality_or_tool=req.tool_name,
-                threat_detected=True,
-                action_taken="BLOCKED",
-                risk_category_ids=[10, 12, 30],
-                summary=f"[HMAC REJECTED] Unrecognized or forged HMAC hash '{req.intent_hmac_hash}'",
-                details={
-                    "tool": req.tool_name,
-                    "reason": "No registered Step-0 contract matches provided hash",
-                },
-            )
-            await telemetry_manager.broadcast_event(event)
-            return ToolCallInterceptResponse(
-                intercept_id=intercept_id,
-                session_id=req.session_id,
-                execution_permitted=False,
-                requires_human_approval_card=False,
-                approval_card_id=None,
-                action_taken="BLOCKED",
-                policy_reference="RISK_10_SPOOFED_AUTHORITY_HMAC_FAIL",
-                reason="Forged or unrecognized intent_hmac_hash. Risk #10 (Spoofed Authorization).",
-                execution_token_hmac=None,
-                risk_category_ids=[10, 12, 30],
-                threat_detected=True,
-            )
+    # ── 1. Layer 3 Deterministic Policy Gateway & Pydantic IFC Check ─────────
+    contract_data = session_intent_contracts.get(req.session_id)
+    if contract_data is None:
+        reg_contract = intent_contract_registry.get_contract(req.session_id)
+        if reg_contract is not None:
+            contract_data = reg_contract.model_dump()
 
-        verification = verify_tool_against_contract(
-            contract=contract,
-            tool_name=req.tool_name,
-            tool_arguments=req.tool_arguments,
-            argument_provenance=req.argument_provenance,
-            provided_hmac_hash=req.intent_hmac_hash,
-        )
-        if not verification.allowed:
-            card_id = verification.approval_card_id or (
-                _new_id() if verification.requires_human_approval_card else None
-            )
-            event = _telemetry_event(
-                session_id=req.session_id,
-                hook_stage="HOOK_2_TOOL_CALL",
-                modality_or_tool=req.tool_name,
-                threat_detected=True,
-                action_taken=verification.action_taken,
-                risk_category_ids=verification.risk_category_ids,
-                summary=f"[CONTRACT VIOLATION] {verification.reason}",
-                details={
-                    "intercept_id": intercept_id,
-                    "contract_id": contract.contract_id,
-                    "violation_type": verification.violation_type,
-                    "reason": verification.reason,
-                    "approval_card_id": card_id,
-                },
-            )
-            await telemetry_manager.broadcast_event(event)
-            return ToolCallInterceptResponse(
-                intercept_id=intercept_id,
-                session_id=req.session_id,
-                execution_permitted=False,
-                requires_human_approval_card=verification.requires_human_approval_card,
-                approval_card_id=card_id,
-                action_taken=verification.action_taken,
-                policy_reference=verification.policy_reference,
-                reason=verification.reason,
-                execution_token_hmac=None,
-                risk_category_ids=verification.risk_category_ids,
-                threat_detected=True,
-            )
-
-    # ── 1. Determine if any argument carries UNTRUSTED_EXT provenance ────────
-    has_untrusted_arg = any(
-        prov == "UNTRUSTED_EXT" for prov in req.argument_provenance.values()
+    eval_req = PolicyEvaluationRequest(
+        session_id=req.session_id,
+        tool_name=req.tool_name,
+        tool_arguments=req.tool_arguments,
+        argument_provenance=req.argument_provenance,
+        intent_contract=contract_data,
+        provided_intent_hmac_hash=req.intent_hmac_hash,
     )
-    is_bank_mutation = req.tool_name in _HIGH_RISK_BANK_TOOLS
-    is_exec_tool     = req.tool_name in _HIGH_RISK_EXEC_TOOLS
-    is_payment_tool  = req.tool_name in _HIGH_RISK_PAYMENT_TOOLS
 
-    # ── 2. Policy decision ──────────────────────────────────────────────────
-    threat_detected = False
-    risk_category_ids: List[int] = []
-    execution_permitted = True
-    requires_approval  = False
-    action_taken       = "SAFE_EXECUTED"
-    approval_card_id: Optional[str] = None
-    execution_token_hmac: Optional[str] = None
-    reason = "Tool call is authorized and safe."
+    eval_res = deterministic_policy_gateway.evaluate_tool_call(eval_req)
 
-    if is_bank_mutation and has_untrusted_arg:
-        # Financial mutation driven by untrusted data → block + human approval
-        threat_detected  = True
-        risk_category_ids = [16, 18]
-        execution_permitted = False
-        requires_approval   = True
-        action_taken        = "HUMAN_APPROVAL_REQUIRED"
-        approval_card_id    = _new_id()
-        reason = (
-            f"HIGH-RISK: Tool '{req.tool_name}' modifies payment/bank details "
-            "using argument(s) sourced from UNTRUSTED_EXT. "
-            "Human approval required before execution."
-        )
-    elif is_exec_tool:
-        # Shell/exec tools are always blocked
-        threat_detected   = True
-        risk_category_ids = [17]
-        execution_permitted = False
-        action_taken        = "BLOCKED"
-        reason = (
-            f"BLOCKED: Shell/exec tool '{req.tool_name}' is not permitted "
-            "inside the IntentGuard sandbox."
-        )
-    elif is_payment_tool and has_untrusted_arg:
-        # Payment tools with untrusted args need human approval
-        threat_detected   = True
-        risk_category_ids = [16]
-        execution_permitted = False
-        requires_approval   = True
-        action_taken        = "HUMAN_APPROVAL_REQUIRED"
-        approval_card_id    = _new_id()
-        reason = (
-            f"HIGH-RISK: Payment tool '{req.tool_name}' carries UNTRUSTED_EXT "
-            "arguments. Human approval required."
-        )
-    else:
-        # Safe → issue HMAC execution token for Layer 4 Sandbox
-        token_message = f"{req.session_id}:{req.tool_name}:{intercept_id}"
-        execution_token_hmac = _hmac_sha256(settings.HMAC_MASTER_SECRET, token_message)
+    card_id = _new_id() if eval_res.requires_human_approval_card else None
 
     response = ToolCallInterceptResponse(
         intercept_id=intercept_id,
         session_id=req.session_id,
-        execution_permitted=execution_permitted,
-        requires_human_approval_card=requires_approval,
-        approval_card_id=approval_card_id,
-        action_taken=action_taken,  # type: ignore[arg-type]
-        policy_reference=settings.DEFAULT_POLICY_REFERENCE,
-        reason=reason,
-        execution_token_hmac=execution_token_hmac,
-        risk_category_ids=risk_category_ids,
-        threat_detected=threat_detected,
+        execution_permitted=eval_res.execution_permitted,
+        requires_human_approval_card=eval_res.requires_human_approval_card,
+        approval_card_id=card_id,
+        action_taken=eval_res.action_taken,
+        policy_reference=eval_res.policy_reference,
+        reason=eval_res.reason,
+        execution_token_hmac=eval_res.execution_token_hmac,
+        risk_category_ids=eval_res.risk_category_ids,
+        threat_detected=eval_res.threat_detected,
     )
 
     event = _telemetry_event(
         session_id=req.session_id,
         hook_stage="HOOK_2_TOOL_CALL",
         modality_or_tool=req.tool_name,
-        threat_detected=threat_detected,
-        action_taken=action_taken,
-        risk_category_ids=risk_category_ids,
+        threat_detected=eval_res.threat_detected,
+        action_taken=eval_res.action_taken,
+        risk_category_ids=eval_res.risk_category_ids,
         summary=(
-            f"[THREAT] Tool '{req.tool_name}' blocked/flagged" if threat_detected
+            f"[THREAT] Tool '{req.tool_name}' blocked/flagged: {eval_res.reason}"
+            if eval_res.threat_detected
             else f"Tool '{req.tool_name}' approved"
         ),
         details={
             "intercept_id": intercept_id,
             "tool": req.tool_name,
-            "execution_permitted": execution_permitted,
-            "reason": reason,
+            "execution_permitted": eval_res.execution_permitted,
+            "reason": eval_res.reason,
+            "action_taken": eval_res.action_taken,
+            "ifc_violations": [v.model_dump() for v in eval_res.ifc_violations],
+            "approval_card_id": card_id,
+            "intent_hmac_hash": eval_res.intent_hmac_hash,
         },
     )
     await telemetry_manager.broadcast_event(event)
 
     logger.info(
         "Hook2 [%s] session=%s tool=%s permitted=%s action=%s",
-        intercept_id, req.session_id, req.tool_name, execution_permitted, action_taken,
+        intercept_id, req.session_id, req.tool_name, eval_res.execution_permitted, eval_res.action_taken,
     )
     return response
 
@@ -1163,6 +1069,7 @@ async def reset_session_budget(session_id: str) -> dict:
     """Reset budget counters and unlock an aborted session."""
     resource_budget_enforcer.reset_session(session_id)
     intent_contract_registry.reset_session(session_id)
+    session_intent_contracts.pop(session_id, None)
     return {
         "session_id": session_id,
         "status": "reset_successful",
@@ -1171,6 +1078,23 @@ async def reset_session_budget(session_id: str) -> dict:
 
 
 # ========================= STEP-0 INTENT CONTRACT ENDPOINTS ==================
+
+@interceptor_router.post("/register-intent")
+async def register_intent_endpoint(contract_data: Dict[str, Any]) -> dict:
+    """
+    Registers an active Step0IntentContract in the OpenClaw Interceptor Bridge session registry.
+    """
+    session_id = contract_data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    session_intent_contracts[session_id] = contract_data
+    try:
+        contract = Step0IntentContract(**contract_data)
+        intent_contract_registry.force_register_contract(contract)
+    except Exception as exc:
+        logger.warning("Could not register Step0IntentContract in registry: %s", exc)
+    return {"status": "registered", "session_id": session_id}
+
 
 @interceptor_router.post("/intent-lock", response_model=Step0IntentContract)
 async def lock_step0_intent(req: IntentLockRequest) -> Step0IntentContract:
@@ -1190,6 +1114,7 @@ async def lock_step0_intent(req: IntentLockRequest) -> Step0IntentContract:
         explicit_approved_po_numbers=req.approved_po_numbers,
     )
     intent_contract_registry.force_register_contract(contract)
+    session_intent_contracts[req.session_id] = contract.model_dump()
 
     # Broadcast real-time X-Ray telemetry
     event = _telemetry_event(
