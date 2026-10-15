@@ -1,0 +1,50 @@
+﻿# ============================================================================
+# IntentGuard Backend -- Python Dependencies
+# GENESIS 2.0 | Track: EVA 03 | PS 01
+# ============================================================================
+
+# --- Web Framework & Server ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+httpx>=0.27.0
+websockets>=12.0
+python-multipart>=0.0.9
+
+# --- Configuration & Validation ---
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.1
+
+# --- Layer 1: Multi-Modal Pre-OCR De-Cloaker ---
+pymupdf>=1.24.0
+pdfplumber>=0.11.0
+python-docx>=1.1.2
+pillow>=10.3.0
+opencv-python-headless>=4.10.0.84
+pytesseract>=0.3.10
+pyzbar>=0.1.9
+openai-whisper>=20231117
+beautifulsoup4>=4.12.3
+lxml>=5.2.2
+
+# --- Layer 2: Memory Quarantine Vault (Redis TTL) ---
+redis>=5.0.4
+
+# --- Layer 3: Cryptography & Policy ---
+cryptography>=42.0.8
+python-magic>=0.4.27
+
+# --- Data Processing ---
+openpyxl>=3.1.4
+
+# --- Layer 2: LLM Clients (P-LLM & Q-LLM) ---
+openai>=1.35.0
+groq>=0.9.0
+
+# --- Testing ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.7
+
+# NOTE: On Windows, python-magic requires the libmagic DLL.
+# Install python-magic-bin as an alternative:
+#   pip install python-magic-bin>=0.4.14

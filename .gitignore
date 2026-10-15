@@ -1,0 +1,101 @@
+# ==============================================================================
+# IntentGuard - Root .gitignore
+# ==============================================================================
+
+# Environment files and secrets (CRITICAL: Do NOT remove or modify)
+.env
+.env.*
+*.env
+*/.env
+**/.env
+intentguard/backend/.env
+intentguard/fabric-api/.env
+intentguard/frontend/.env
+
+# Allow public example templates
+!.env.example
+!**/.env.example
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Node.js / Frontend dependencies & build
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+.next/
+out/
+.turbo/
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# IDE & Editor files
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Antigravity & Agent Scratch Directories
+.agents/scratch/
+scratch/
+*.tmp
+
+# Blockchain & Crypto artifacts
+*.wallet/
+keystore/
+*.id
+crypto-config/
+
+# Logs & Run-time data
+*.log
+logs/
+*.pid
