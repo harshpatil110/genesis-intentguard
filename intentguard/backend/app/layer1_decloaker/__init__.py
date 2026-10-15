@@ -26,6 +26,10 @@ from app.layer1_decloaker.pdf_docx_decloaker import (
     pdf_docx_decloaker,
     relative_luminance,
 )
+from app.layer1_decloaker.archive_file_scanner import (
+    ArchiveFileScanner,
+    archive_file_scanner,
+)
 from app.layer1_decloaker.email_chat_scanner import (
     EmailChatScanner,
     email_chat_scanner,
@@ -51,6 +55,8 @@ __all__ = [
     "web_dom_decloaker",
     "EmailChatScanner",
     "email_chat_scanner",
+    "ArchiveFileScanner",
+    "archive_file_scanner",
 ]
 
 

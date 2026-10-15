@@ -99,6 +99,7 @@ async def reset_policy_budget(session_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 import base64
 from typing import Union
+from app.layer1_decloaker.archive_file_scanner import archive_file_scanner
 from app.layer1_decloaker.audio_video_decloaker import audio_video_decloaker
 from app.layer1_decloaker.email_chat_scanner import email_chat_scanner
 from app.layer1_decloaker.image_decloaker import image_decloaker
@@ -111,7 +112,7 @@ from app.openclaw_bridge.interceptor import DocumentDeCloakRequest
 async def decloak_document_root(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
     """
     Direct inspection endpoint for Forensic X-Ray UI and testing.
-    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, Video, Web DOM, Email, or Chat file.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, Video, Web DOM, Email, Chat, Archive, or Spreadsheet file.
     """
     if req.modality in ("email", "chat") or req.filename.lower().endswith((".eml", ".msg")):
         raw_in: Union[bytes, str] = (
@@ -124,6 +125,20 @@ async def decloak_document_root(req: DocumentDeCloakRequest) -> DocumentDeCloakR
             metadata=req.metadata,
             modality=req.modality or "email",
             filename=req.filename,
+        )
+
+    if req.modality in ("archive", "zip", "csv_xlsx", "xlsx", "csv") or req.filename.lower().endswith(
+        (".zip", ".tar", ".gz", ".7z", ".rar", ".xlsx", ".xlsm", ".csv")
+    ):
+        file_bytes = (
+            base64.b64decode(req.raw_content_base64)
+            if req.raw_content_base64
+            else (req.raw_content_text or "").encode("utf-8")
+        )
+        return archive_file_scanner.scan_file_bytes(
+            file_bytes=file_bytes,
+            filename=req.filename,
+            modality=req.modality,
         )
 
     file_bytes = base64.b64decode(req.raw_content_base64) if req.raw_content_base64 else b""

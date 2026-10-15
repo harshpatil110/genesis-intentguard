@@ -29,6 +29,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.layer1_decloaker.archive_file_scanner import (
+    ArchiveFileScanner,
+    archive_file_scanner,
+)
 from app.layer1_decloaker.audio_video_decloaker import (
     AudioVideoDeCloaker,
     audio_video_decloaker,
@@ -348,9 +352,95 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         or req.source_uri_or_filename.lower().startswith(("smtp://", "imap://", "slack://", "teams://"))
     )
 
+    is_archive_modality = (
+        req.modality in (InputModality.ARCHIVE, "archive")
+        or req.source_uri_or_filename.lower().endswith((".zip", ".tar", ".gz", ".7z", ".rar"))
+    )
+
+    is_spreadsheet_modality = (
+        req.modality in (InputModality.CSV_XLSX, "csv_xlsx")
+        or req.source_uri_or_filename.lower().endswith((".xlsx", ".xlsm", ".csv"))
+    )
+
+    # ── 3a. Deep-Packet File, Executable Disguise & Archive Bomb Check ───────
+    decoded_file_bytes: Optional[bytes] = None
+    if req.raw_content_base64:
+        try:
+            decoded_file_bytes = base64.b64decode(req.raw_content_base64)
+            file_scan_res = archive_file_scanner.scan_file_bytes(
+                file_bytes=decoded_file_bytes,
+                filename=req.source_uri_or_filename,
+                modality=req.modality.value if hasattr(req.modality, "value") else str(req.modality),
+            )
+            raw_evidence_sha256 = file_scan_res.raw_evidence_sha256
+            if file_scan_res.threat_detected:
+                reasons = [f.cloak_reason for f in file_scan_res.cloaked_findings]
+                # Hard block on disguised executable or decompression bomb
+                if any(r in reasons for r in ("DISGUISED_EXECUTABLE", "DECOMPRESSION_BOMB_DETECTED", "ARCHIVE_EXCEEDS_SIZE_LIMIT")):
+                    hard_block_threats: List[Dict] = []
+                    if decoded_file_bytes.startswith(_MZ_MAGIC):
+                        hard_block_threats.append({
+                            "pattern": "MZ_HEADER",
+                            "match": "Disguised Windows executable (MZ header) detected",
+                            "position": 0,
+                            "cloak_reason": "DISGUISED_EXECUTABLE",
+                        })
+                    for f in file_scan_res.cloaked_findings:
+                        hard_block_threats.append(f.model_dump())
+
+                    event = _telemetry_event(
+                        session_id=req.session_id,
+                        hook_stage="HOOK_1_INBOUND",
+                        modality_or_tool=req.modality.value if hasattr(req.modality, "value") else str(req.modality),
+                        threat_detected=True,
+                        action_taken="BLOCKED",
+                        risk_category_ids=file_scan_res.risk_category_ids,
+                        summary=f"[MALWARE/ARCHIVE BLOCKED] {file_scan_res.summary}",
+                        details={
+                            "intercept_id": intercept_id,
+                            "reasons": reasons,
+                            "findings": hard_block_threats,
+                            "raw_sha256": raw_evidence_sha256,
+                        },
+                    )
+                    await telemetry_manager.broadcast_event(event)
+                    logger.warning(
+                        "Hook1 [%s] session=%s BLOCKED by file security scanner: %s",
+                        intercept_id, req.session_id, file_scan_res.summary,
+                    )
+                    return InboundInterceptResponse(
+                        intercept_id=intercept_id,
+                        session_id=req.session_id,
+                        allowed_to_proceed=False,
+                        provenance_tag="UNTRUSTED_EXT",
+                        sanitized_text=f"[BLOCKED BY FILE SECURITY SCANNER: {file_scan_res.summary}]",
+                        cloaked_threats_removed=hard_block_threats,
+                        surgical_redactions=[],
+                        raw_evidence_sha256=raw_evidence_sha256,
+                        redacted_diff_sha256=_sha256_hex(f"BLOCKED:{raw_evidence_sha256}"),
+                        risk_category_ids=file_scan_res.risk_category_ids,
+                        threat_detected=True,
+                        action_taken="BLOCKED",
+                    )
+                else:
+                    # Non-hard-block threats (e.g. spreadsheet formulas / hidden sheets)
+                    threat_detected = True
+                    for rid in file_scan_res.risk_category_ids:
+                        if rid not in risk_category_ids:
+                            risk_category_ids.append(rid)
+                    for finding in file_scan_res.cloaked_findings:
+                        cloaked_threats.append(finding.model_dump())
+                    text_to_scan = file_scan_res.visible_clean_text
+                    sanitized_b64 = file_scan_res.metadata_sanitized.get("sanitized_bytes_b64")
+                    if sanitized_b64:
+                        req.raw_content_base64 = sanitized_b64
+                        decoded_file_bytes = base64.b64decode(sanitized_b64)
+        except Exception as exc:
+            logger.warning("Error running ArchiveFileScanner in Hook 1: %s", exc)
+
     if is_doc_modality and req.raw_content_base64:
         try:
-            decoded_bytes = base64.b64decode(req.raw_content_base64)
+            decoded_bytes = decoded_file_bytes if decoded_file_bytes is not None else base64.b64decode(req.raw_content_base64)
             # Check for disguised Windows executable header (MZ)
             if decoded_bytes.startswith(_MZ_MAGIC):
                 threat_detected = True
@@ -524,6 +614,23 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
                 text_to_scan = decloak_res.visible_clean_text
         except Exception as exc:
             logger.warning("Error running Email/Chat scanner: %s", exc)
+
+    elif is_spreadsheet_modality and req.raw_content_text:
+        try:
+            san_bytes, sheet_findings, sheet_preview = archive_file_scanner.scan_spreadsheet_safety(
+                req.raw_content_text.encode("utf-8"),
+                req.source_uri_or_filename,
+            )
+            if sheet_findings:
+                threat_detected = True
+                for f in sheet_findings:
+                    for rid in f.risk_category_ids:
+                        if rid not in risk_category_ids:
+                            risk_category_ids.append(rid)
+                    cloaked_threats.append(f.model_dump())
+            text_to_scan = sheet_preview
+        except Exception as exc:
+            logger.warning("Error running Spreadsheet scanner for raw text: %s", exc)
 
     # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX/IMAGE
     elif req.raw_content_base64:
@@ -1134,6 +1241,20 @@ async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCl
             metadata=req.metadata,
             modality=req.modality or "email",
             filename=req.filename,
+        )
+
+    if req.modality in ("archive", "zip", "csv_xlsx", "xlsx", "csv") or req.filename.lower().endswith(
+        (".zip", ".tar", ".gz", ".7z", ".rar", ".xlsx", ".xlsm", ".csv")
+    ):
+        file_bytes = (
+            base64.b64decode(req.raw_content_base64)
+            if req.raw_content_base64
+            else (req.raw_content_text or "").encode("utf-8")
+        )
+        return archive_file_scanner.scan_file_bytes(
+            file_bytes=file_bytes,
+            filename=req.filename,
+            modality=req.modality,
         )
 
     file_bytes = base64.b64decode(req.raw_content_base64) if req.raw_content_base64 else b""

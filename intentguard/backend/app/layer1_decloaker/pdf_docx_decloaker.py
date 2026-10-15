@@ -57,7 +57,11 @@ class CloakedSpanFinding(BaseModel):
     Supplies coordinates and color metrics for the Forensic X-Ray Diff UI.
     """
     finding_id: str = Field(default_factory=lambda: f"span-{uuid.uuid4().hex[:8]}")
-    modality: Literal["pdf", "docx", "image", "screenshot", "receipt", "audio", "video", "web_dom", "email", "chat"]
+    modality: Literal[
+        "pdf", "docx", "image", "screenshot", "receipt",
+        "audio", "video", "web_dom", "email", "chat",
+        "archive", "csv_xlsx", "file"
+    ]
     page_or_paragraph: int = 1  # 1-indexed page number (PDF) or paragraph/element index
     cloak_reason: Literal[
         "MICRO_FONT_SIZE",
@@ -81,6 +85,12 @@ class CloakedSpanFinding(BaseModel):
         "REPLY_TO_MISMATCH",
         "SPOOFED_AUTHORIZATION_CLAIM",
         "FORGED_SYSTEM_OUTPUT",
+        "DISGUISED_EXECUTABLE",
+        "ARCHIVE_EXCEEDS_SIZE_LIMIT",
+        "DECOMPRESSION_BOMB_DETECTED",
+        "SUSPICIOUS_NESTED_ARCHIVE",
+        "HIDDEN_SPREADSHEET_DATA",
+        "MALICIOUS_CELL_FORMULA",
     ]
     hidden_text: str
     font_size_pt: Optional[float] = None
@@ -94,11 +104,15 @@ class CloakedSpanFinding(BaseModel):
 
 class DocumentDeCloakResult(BaseModel):
     """
-    Outcome of the Pre-OCR De-Cloaker engine for a single PDF, DOCX, Image, Audio, Video, Web DOM, Email, or Chat file/payload.
+    Outcome of the Pre-OCR De-Cloaker engine for a single PDF, DOCX, Image, Audio, Video, Web DOM, Email, Chat, Archive, or Spreadsheet file/payload.
     """
     raw_evidence_sha256: str  # 64-char lowercase hex
     redacted_diff_sha256: str  # 64-char lowercase hex
-    modality: Literal["pdf", "docx", "image", "screenshot", "receipt", "audio", "video", "web_dom", "email", "chat"]
+    modality: Literal[
+        "pdf", "docx", "image", "screenshot", "receipt",
+        "audio", "video", "web_dom", "email", "chat",
+        "archive", "csv_xlsx", "file"
+    ]
     visible_clean_text: str
     raw_unfiltered_text: str
     cloaked_findings: List[CloakedSpanFinding] = Field(default_factory=list)
