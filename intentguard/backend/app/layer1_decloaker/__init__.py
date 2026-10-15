@@ -26,6 +26,10 @@ from app.layer1_decloaker.pdf_docx_decloaker import (
     pdf_docx_decloaker,
     relative_luminance,
 )
+from app.layer1_decloaker.web_dom_decloaker import (
+    WebDOMDeCloaker,
+    web_dom_decloaker,
+)
 
 __all__ = [
     "CloakedSpanFinding",
@@ -39,6 +43,9 @@ __all__ = [
     "image_decloaker",
     "AudioVideoDeCloaker",
     "audio_video_decloaker",
+    "WebDOMDeCloaker",
+    "web_dom_decloaker",
 ]
+
 
 

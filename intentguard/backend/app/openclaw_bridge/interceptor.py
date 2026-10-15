@@ -41,6 +41,10 @@ from app.layer1_decloaker.pdf_docx_decloaker import (
     DocumentDeCloakResult,
     pdf_docx_decloaker,
 )
+from app.layer1_decloaker.web_dom_decloaker import (
+    WebDOMDeCloaker,
+    web_dom_decloaker,
+)
 from app.layer2_camel.intent_contract import (
     Step0IntentContract,
     compile_step0_intent_contract,
@@ -327,6 +331,12 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         or req.source_uri_or_filename.lower().endswith((".mp3", ".wav", ".ogg", ".mp4", ".mov", ".m4a", ".webm"))
     )
 
+    is_web_dom_modality = (
+        req.modality in (InputModality.WEB_DOM, "web_dom")
+        or req.source_uri_or_filename.lower().endswith((".html", ".htm"))
+        or bool(req.raw_content_text and ("<html" in req.raw_content_text.lower() or "<body" in req.raw_content_text.lower()))
+    )
+
     if is_doc_modality and req.raw_content_base64:
         try:
             decoded_bytes = base64.b64decode(req.raw_content_base64)
@@ -420,6 +430,50 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
                 text_to_scan = decloak_res.visible_clean_text
         except Exception as exc:
             logger.warning("Error running Audio/Video de-cloaker: %s", exc)
+
+    elif is_web_dom_modality and (req.raw_content_base64 or req.raw_content_text):
+        try:
+            if req.raw_content_base64:
+                decoded_bytes = base64.b64decode(req.raw_content_base64)
+                if decoded_bytes.startswith(_MZ_MAGIC):
+                    threat_detected = True
+                    if 2 not in risk_category_ids:
+                        risk_category_ids.append(2)
+                    cloaked_threats.append({
+                        "pattern": "MZ_HEADER",
+                        "match": "Disguised Windows executable (MZ header) detected",
+                        "position": 0,
+                    })
+                else:
+                    decloak_res = web_dom_decloaker.decloak_web_dom_bytes(
+                        html_input=decoded_bytes,
+                        filename=req.source_uri_or_filename,
+                    )
+                    raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                    if decloak_res.threat_detected:
+                        threat_detected = True
+                        for r_id in decloak_res.risk_category_ids:
+                            if r_id not in risk_category_ids:
+                                risk_category_ids.append(r_id)
+                        for finding in decloak_res.cloaked_findings:
+                            cloaked_threats.append(finding.model_dump())
+                    text_to_scan = decloak_res.visible_clean_text
+            elif req.raw_content_text:
+                decloak_res = web_dom_decloaker.decloak_web_dom_bytes(
+                    html_input=req.raw_content_text,
+                    filename=req.source_uri_or_filename,
+                )
+                raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                if decloak_res.threat_detected:
+                    threat_detected = True
+                    for r_id in decloak_res.risk_category_ids:
+                        if r_id not in risk_category_ids:
+                            risk_category_ids.append(r_id)
+                    for finding in decloak_res.cloaked_findings:
+                        cloaked_threats.append(finding.model_dump())
+                text_to_scan = decloak_res.visible_clean_text
+        except Exception as exc:
+            logger.warning("Error running Web DOM de-cloaker: %s", exc)
 
     # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX/IMAGE
     elif req.raw_content_base64:
@@ -1027,6 +1081,8 @@ async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCl
     ):
         mod_str = req.modality or ("video" if req.filename.lower().endswith((".mp4", ".mov", ".m4a", ".webm")) else "audio")
         return audio_video_decloaker.decloak_media_bytes(file_bytes=file_bytes, modality=mod_str, filename=req.filename)
+    elif req.modality in ("web_dom", "html") or req.filename.lower().endswith((".html", ".htm")):
+        return web_dom_decloaker.decloak_web_dom_bytes(html_input=file_bytes, filename=req.filename)
     return pdf_docx_decloaker.decloak_document(
         file_bytes=file_bytes,
         filename=req.filename,

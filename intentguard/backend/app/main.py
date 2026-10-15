@@ -101,6 +101,7 @@ import base64
 from app.layer1_decloaker.audio_video_decloaker import audio_video_decloaker
 from app.layer1_decloaker.image_decloaker import image_decloaker
 from app.layer1_decloaker.pdf_docx_decloaker import DocumentDeCloakResult, pdf_docx_decloaker
+from app.layer1_decloaker.web_dom_decloaker import web_dom_decloaker
 from app.openclaw_bridge.interceptor import DocumentDeCloakRequest
 
 
@@ -108,7 +109,7 @@ from app.openclaw_bridge.interceptor import DocumentDeCloakRequest
 async def decloak_document_root(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
     """
     Direct inspection endpoint for Forensic X-Ray UI and testing.
-    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, or Video file.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, Video, or Web DOM file.
     """
     file_bytes = base64.b64decode(req.raw_content_base64)
     if req.modality in ("image", "screenshot", "receipt") or req.filename.lower().endswith(
@@ -120,6 +121,8 @@ async def decloak_document_root(req: DocumentDeCloakRequest) -> DocumentDeCloakR
     ):
         mod_str = req.modality or ("video" if req.filename.lower().endswith((".mp4", ".mov", ".m4a", ".webm")) else "audio")
         return audio_video_decloaker.decloak_media_bytes(file_bytes=file_bytes, modality=mod_str, filename=req.filename)
+    elif req.modality in ("web_dom", "html") or req.filename.lower().endswith((".html", ".htm")):
+        return web_dom_decloaker.decloak_web_dom_bytes(html_input=file_bytes, filename=req.filename)
     return pdf_docx_decloaker.decloak_document(
         file_bytes=file_bytes,
         filename=req.filename,
