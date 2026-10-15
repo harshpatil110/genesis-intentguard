@@ -61,6 +61,10 @@ from app.layer2_camel.surgical_redactor import (
     SurgicalRedactor,
     surgical_redactor,
 )
+from app.layer2_camel.memory_quarantine import (
+    MemoryQuarantineVault,
+    memory_quarantine_vault,
+)
 from app.layer2_camel.intent_contract import (
     Step0IntentContract,
     compile_step0_intent_contract,
@@ -988,80 +992,52 @@ async def intercept_memory_write(req: MemoryWriteInterceptRequest) -> MemoryWrit
     """
     Hook 3 — Memory Write Interceptor.
     Guards MEMORY.md against sleeper-rule injection and tainted session writes.
+    Delegates safe evaluation and Redis TTL routing to MemoryQuarantineVault.
     """
     intercept_id = _new_id()
 
-    # ── 1. Determine taint ──────────────────────────────────────────────────
+    # ── 1. Determine session taint ──────────────────────────────────────────
     is_tainted = (
         req.session_tainted_by_untrusted_ext
         or session_taint_registry.get(req.session_id, False)
     )
 
-    # ── 2. Scan for sleeper-rule patterns ────────────────────────────────────
-    content = req.proposed_memory_content
-    sleeper_hits = [p.pattern for p in _SLEEPER_PATTERNS if p.search(content)]
-    has_sleeper  = len(sleeper_hits) > 0
-
-    # ── 3. Decision ─────────────────────────────────────────────────────────
-    threat_detected = has_sleeper
-    risk_category_ids: List[int] = [12, 13, 20] if has_sleeper else ([14] if is_tainted else [])
-
-    if is_tainted or has_sleeper:
-        persistent_write_allowed = False
-        routed_to_quarantine     = True
-        quarantine_key           = f"intentguard:quarantine:{req.session_id}"
-        ttl                      = settings.MEMORY_QUARANTINE_TTL_SECONDS
-        action_taken             = "QUARANTINED_MEMORY"
-        reason = (
-            "Memory write quarantined: "
-            + (f"sleeper patterns detected {sleeper_hits}; " if has_sleeper else "")
-            + ("session is tainted by UNTRUSTED_EXT input." if is_tainted else "")
-        )
-    else:
-        persistent_write_allowed = True
-        routed_to_quarantine     = False
-        quarantine_key           = None
-        ttl                      = 0
-        action_taken             = "SAFE_EXECUTED"
-        reason                   = "Memory write is from a clean USER_AUTHORITY session."
-
-    response = MemoryWriteInterceptResponse(
+    # ── 2. Evaluate and route via MemoryQuarantineVault ─────────────────────
+    response = await memory_quarantine_vault.evaluate_and_route_memory(
+        session_id=req.session_id,
+        proposed_content=req.proposed_memory_content,
+        session_tainted=is_tainted,
+        target_memory_file=req.target_memory_file,
         intercept_id=intercept_id,
-        persistent_write_allowed=persistent_write_allowed,
-        routed_to_redis_quarantine=routed_to_quarantine,
-        quarantine_key=quarantine_key,
-        ttl_seconds=ttl,
-        action_taken=action_taken,  # type: ignore[arg-type]
-        threat_detected=threat_detected,
-        risk_category_ids=risk_category_ids,
-        reason=reason,
     )
 
+    # ── 3. Broadcast real-time X-Ray telemetry ──────────────────────────────
     event = _telemetry_event(
         session_id=req.session_id,
         hook_stage="HOOK_3_MEMORY_WRITE",
         modality_or_tool=req.target_memory_file,
-        threat_detected=threat_detected,
-        action_taken=action_taken,
-        risk_category_ids=risk_category_ids,
+        threat_detected=response.threat_detected,
+        action_taken=response.action_taken,
+        risk_category_ids=response.risk_category_ids,
         summary=(
             f"[QUARANTINED] Memory write blocked for session {req.session_id}"
-            if not persistent_write_allowed
+            if not response.persistent_write_allowed
             else f"Memory write approved for session {req.session_id}"
         ),
         details={
             "intercept_id": intercept_id,
             "tainted": is_tainted,
-            "sleeper_patterns": sleeper_hits,
-            "quarantine_key": quarantine_key,
-            "ttl": ttl,
+            "quarantine_key": response.quarantine_key,
+            "ttl": response.ttl_seconds,
+            "reason": response.reason,
+            "risk_category_ids": response.risk_category_ids,
         },
     )
     await telemetry_manager.broadcast_event(event)
 
     logger.info(
         "Hook3 [%s] session=%s allowed=%s action=%s",
-        intercept_id, req.session_id, persistent_write_allowed, action_taken,
+        intercept_id, req.session_id, response.persistent_write_allowed, response.action_taken,
     )
     return response
 

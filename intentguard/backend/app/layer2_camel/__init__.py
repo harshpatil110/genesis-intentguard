@@ -10,6 +10,7 @@ Provides:
 - CaMeL Data Plane Quarantined Reader (Q-LLM) with Zero Tool Access
 - Runtime Provenance Taint Wrapper (ProvenanceEnvelope)
 - CaMeL Control Plane Privileged Planner (P-LLM)
+- Memory Quarantine Vault (Redis TTL Sleeper Attack Isolation)
 """
 
 from app.layer2_camel.intent_contract import (
@@ -61,6 +62,10 @@ from app.layer2_camel.privileged_planner import (
     PrivilegedPlannerLLM,
     privileged_planner,
 )
+from app.layer2_camel.memory_quarantine import (
+    MemoryQuarantineVault,
+    memory_quarantine_vault,
+)
 
 __all__ = [
     # Intent Contract
@@ -105,4 +110,7 @@ __all__ = [
     # Privileged Planner
     "PrivilegedPlannerLLM",
     "privileged_planner",
+    # Memory Quarantine Vault
+    "MemoryQuarantineVault",
+    "memory_quarantine_vault",
 ]
