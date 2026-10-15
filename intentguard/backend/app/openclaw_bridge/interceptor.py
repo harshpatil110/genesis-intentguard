@@ -57,6 +57,10 @@ from app.layer2_camel.business_disambiguator import (
     BusinessCommandDisambiguator,
     business_disambiguator,
 )
+from app.layer2_camel.surgical_redactor import (
+    SurgicalRedactor,
+    surgical_redactor,
+)
 from app.layer2_camel.intent_contract import (
     Step0IntentContract,
     compile_step0_intent_contract,
@@ -659,29 +663,34 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         po_hint=req.metadata.get("po_id") or req.metadata.get("po_reference"),
     )
 
-    if disambig_res.threat_detected:
+    # ── 3d. Surgical Redactor & Deterministic Diff Hasher (Task 12) ──────────
+    redaction_res = surgical_redactor.redact(
+        document_id=intercept_id,
+        raw_or_decloaked_text=text_to_scan,
+        layer1_cloaked_spans=cloaked_threats,
+        disambiguation_result=disambig_res,
+        po_hint=req.metadata.get("po_id") or req.metadata.get("po_reference"),
+    )
+
+    sanitized_text = redaction_res.clean_business_text
+    redacted_diff_sha256 = redaction_res.redacted_diff_sha256
+
+    if redaction_res.threat_detected:
         threat_detected = True
-        for rid in disambig_res.risk_category_ids:
+        for rid in redaction_res.risk_category_ids:
             if rid not in risk_category_ids:
                 risk_category_ids.append(rid)
 
-        for flagged_span in disambig_res.malicious_overrides_flagged:
-            surgical_redactions.append({
-                "original": flagged_span.text,
-                "replacement": "[REDACTED_AUTHORITY_OVERRIDE]",
-                "risk_ids": flagged_span.triggered_risk_ids,
-                "reason": flagged_span.reason,
-            })
-            cloaked_threats.append({
-                "pattern": "MALICIOUS_AUTHORITY_OVERRIDE",
-                "match": flagged_span.text,
-                "reason": flagged_span.reason,
-                "risk_category_ids": flagged_span.triggered_risk_ids,
-            })
+    # Format surgical redactions list for InboundInterceptResponse
+    for span in redaction_res.diff_record.removed_malicious_spans:
+        span_dict = span.model_dump()
+        span_dict["original"] = span.exact_removed_text
+        span_dict["replacement"] = "[REDACTED_AUTHORITY_OVERRIDE]"
+        span_dict["risk_ids"] = span.risk_category_ids
+        span_dict["reason"] = span.threat_reason
+        surgical_redactions.append(span_dict)
 
-    sanitized_text = disambig_res.preserved_text_for_reader
-
-    # ── 3d. Baseline pattern redactions (if any remain) ─────────────────────
+    # ── 3e. Baseline pattern redactions fallback (if any remain) ────────────
     for pat in _INJECTION_PATTERNS:
         if pat.search(sanitized_text):
             original = pat.search(sanitized_text).group(0)  # type: ignore[union-attr]
@@ -693,16 +702,12 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
                 "replacement": "[REDACTED_INJECTION]",
             })
 
-    # ── 4. Compute redacted diff SHA-256 ────────────────────────────────────
-    diff_record = f"ORIGINAL:{raw_evidence_sha256}|SANITIZED:{sanitized_text}"
-    redacted_diff_sha256 = _sha256_hex(diff_record)
-
-    # ── 5. Build response ────────────────────────────────────────────────────
-    action_taken = "SURGICALLY_REDACTED" if (surgical_redactions or cloaked_threats) else "SAFE_EXECUTED"
+    # ── 4. Build response with Hyperledger Fabric Invariant ──────────────────
+    action_taken = "SURGICALLY_REDACTED" if (threat_detected or redaction_res.threat_detected) else "SAFE_EXECUTED"
     response = InboundInterceptResponse(
         intercept_id=intercept_id,
         session_id=req.session_id,
-        allowed_to_proceed=True,  # Layer 1 decloaker may override in deeper tasks
+        allowed_to_proceed=True,  # Legitimate business workflow continues with sanitized text
         provenance_tag="UNTRUSTED_EXT",
         sanitized_text=sanitized_text,
         cloaked_threats_removed=cloaked_threats,
@@ -714,27 +719,31 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         action_taken=action_taken,
     )
 
-    # ── 6. Broadcast X-Ray telemetry ────────────────────────────────────────
+    # ── 5. Broadcast X-Ray telemetry with visual diff segments ───────────────
     event = _telemetry_event(
         session_id=req.session_id,
         hook_stage="HOOK_1_INBOUND",
-        modality_or_tool=req.modality.value,
+        modality_or_tool=req.modality.value if hasattr(req.modality, "value") else str(req.modality),
         threat_detected=threat_detected,
         action_taken=action_taken,
         risk_category_ids=risk_category_ids,
         summary=(
-            f"[THREAT DETECTED] Injection in {req.modality.value} from "
+            f"[THREAT DETECTED] Injection in {req.modality.value if hasattr(req.modality, 'value') else req.modality} from "
             f"{req.source_uri_or_filename}" if threat_detected
-            else f"Safe {req.modality.value} input from {req.source_uri_or_filename}"
+            else f"Safe {req.modality.value if hasattr(req.modality, 'value') else req.modality} input from {req.source_uri_or_filename}"
         ),
         details={
             "intercept_id": intercept_id,
             "source": req.source_uri_or_filename,
             "threats_found": len(cloaked_threats),
             "redactions": len(surgical_redactions),
+            "redaction_count": redaction_res.diff_record.redaction_count,
+            "xray_diff_segments": [seg.model_dump() for seg in redaction_res.xray_diff_segments],
             "raw_sha256": raw_evidence_sha256,
+            "redacted_diff_sha256": redacted_diff_sha256,
             "false_positives_prevented_count": disambig_res.false_positives_prevented_count,
             "safe_business_directives_count": len(disambig_res.safe_business_directives_kept),
+            "task_continuity_preserved": redaction_res.task_continuity_preserved,
         },
     )
     await telemetry_manager.broadcast_event(event)
