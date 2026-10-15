@@ -384,3 +384,41 @@ def test_hook1_receipt_modality_routing(client: TestClient):
     assert "Dinner Receipt" in data["sanitized_text"]
     assert session_taint_registry.get("sess-receipt-01") is True
 
+
+# ---------------------------------------------------------------------------
+# Test 10: Live Host System Dependencies (Tesseract OCR Engine & ZBar DLLs)
+# ---------------------------------------------------------------------------
+
+def test_live_qr_code_decoding_with_pyzbar():
+    """Verify live host system pyzbar decoding works on an actual rendered QR code without mocks."""
+    import qrcode
+
+    qr = qrcode.QRCode(box_size=8, border=4)
+    qr.add_data("http://169.254.169.254/latest/meta-data/")
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    bio = io.BytesIO()
+    img.save(bio, format="PNG")
+    img_bytes = bio.getvalue()
+
+    # Execute decloak on live QR image without mocking pyzbar
+    res = image_decloaker.decloak_image_bytes(img_bytes, filename="live_ssrf_qr.png")
+    assert res.threat_detected is True
+    assert any(f.cloak_reason == "MALICIOUS_QR_CODE" for f in res.cloaked_findings)
+    assert 23 in res.risk_category_ids
+    assert 4 in res.risk_category_ids
+
+
+def test_live_ocr_with_tesseract_engine():
+    """Verify live host system Tesseract binary executes and extracts text from an image."""
+    from PIL import ImageDraw
+    import pytesseract
+
+    img = Image.new("RGB", (250, 80), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    draw.text((10, 25), "INVOICE #9988", fill=(0, 0, 0))
+
+    ocr_result = pytesseract.image_to_string(img)
+    assert "INVOICE" in ocr_result or "#9988" in ocr_result or "9988" in ocr_result
+
+

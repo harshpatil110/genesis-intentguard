@@ -17,6 +17,8 @@ import hashlib
 import io
 import logging
 import re
+import os
+import shutil
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -25,6 +27,18 @@ import numpy as np
 from PIL import ExifTags, Image
 import pytesseract
 import pyzbar.pyzbar as pyzbar
+
+# Ensure Tesseract executable path is resolved on Windows environments
+_DEFAULT_WIN_TESSERACT_PATHS = [
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+]
+if shutil.which("tesseract") is None:
+    for candidate in _DEFAULT_WIN_TESSERACT_PATHS:
+        if os.path.isfile(candidate):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            break
 
 from app.config import settings
 from app.layer1_decloaker.pdf_docx_decloaker import (
