@@ -9,6 +9,10 @@ opaque vector occlusions, suspicious metadata, embedded JavaScript,
 and DOCX hidden runs.
 """
 
+from app.layer1_decloaker.image_decloaker import (
+    ImageDeCloaker,
+    image_decloaker,
+)
 from app.layer1_decloaker.pdf_docx_decloaker import (
     CloakedSpanFinding,
     DocumentDeCloakResult,
@@ -27,4 +31,7 @@ __all__ = [
     "int_color_to_rgb",
     "pdf_docx_decloaker",
     "relative_luminance",
+    "ImageDeCloaker",
+    "image_decloaker",
 ]
+

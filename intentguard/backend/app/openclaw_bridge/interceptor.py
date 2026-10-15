@@ -29,6 +29,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.layer1_decloaker.image_decloaker import (
+    ImageDeCloaker,
+    image_decloaker,
+)
 from app.layer1_decloaker.pdf_docx_decloaker import (
     DocumentDeCloakResult,
     pdf_docx_decloaker,
@@ -114,6 +118,8 @@ _EXTERNAL_MODALITIES = frozenset(
         InputModality.PDF,
         InputModality.DOCX,
         InputModality.IMAGE,
+        InputModality.SCREENSHOT,
+        InputModality.RECEIPT,
         InputModality.AUDIO,
         InputModality.VIDEO,
         InputModality.WEB_DOM,
@@ -307,6 +313,11 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         or req.source_uri_or_filename.lower().endswith((".pdf", ".docx"))
     )
 
+    is_image_modality = (
+        req.modality in (InputModality.IMAGE, InputModality.SCREENSHOT, InputModality.RECEIPT, "image", "screenshot", "receipt")
+        or req.source_uri_or_filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"))
+    )
+
     if is_doc_modality and req.raw_content_base64:
         try:
             decoded_bytes = base64.b64decode(req.raw_content_base64)
@@ -338,7 +349,37 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         except Exception as exc:
             logger.warning("Error running PDF/DOCX de-cloaker: %s", exc)
 
-    # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX
+    elif is_image_modality and req.raw_content_base64:
+        try:
+            decoded_bytes = base64.b64decode(req.raw_content_base64)
+            # Check for disguised Windows executable header (MZ)
+            if decoded_bytes.startswith(_MZ_MAGIC):
+                threat_detected = True
+                if 2 not in risk_category_ids:
+                    risk_category_ids.append(2)
+                cloaked_threats.append({
+                    "pattern": "MZ_HEADER",
+                    "match": "Disguised Windows executable (MZ header) detected",
+                    "position": 0,
+                })
+            else:
+                decloak_res = image_decloaker.decloak_image_bytes(
+                    file_bytes=decoded_bytes,
+                    filename=req.source_uri_or_filename,
+                )
+                raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                if decloak_res.threat_detected:
+                    threat_detected = True
+                    for r_id in decloak_res.risk_category_ids:
+                        if r_id not in risk_category_ids:
+                            risk_category_ids.append(r_id)
+                    for finding in decloak_res.cloaked_findings:
+                        cloaked_threats.append(finding.model_dump())
+                text_to_scan = decloak_res.visible_clean_text
+        except Exception as exc:
+            logger.warning("Error running Image de-cloaker: %s", exc)
+
+    # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX/IMAGE
     elif req.raw_content_base64:
         try:
             decoded_bytes = base64.b64decode(req.raw_content_base64)
@@ -932,9 +973,13 @@ class DocumentDeCloakRequest(BaseModel):
 async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
     """
     Direct inspection endpoint for Forensic X-Ray UI and testing.
-    Runs Pre-OCR De-Cloaker on base64-encoded PDF or DOCX file.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, or Image file.
     """
     file_bytes = base64.b64decode(req.raw_content_base64)
+    if req.modality in ("image", "screenshot", "receipt") or req.filename.lower().endswith(
+        (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")
+    ):
+        return image_decloaker.decloak_image_bytes(file_bytes=file_bytes, filename=req.filename)
     return pdf_docx_decloaker.decloak_document(
         file_bytes=file_bytes,
         filename=req.filename,

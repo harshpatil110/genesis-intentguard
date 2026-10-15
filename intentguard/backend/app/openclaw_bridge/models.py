@@ -21,16 +21,19 @@ from pydantic import BaseModel, Field
 
 class InputModality(str, Enum):
     """Supported modalities for Hook 1 inbound data interception."""
-    EMAIL     = "email"
-    PDF       = "pdf"
-    DOCX      = "docx"
-    IMAGE     = "image"
-    AUDIO     = "audio"
-    VIDEO     = "video"
-    WEB_DOM   = "web_dom"
-    CSV_XLSX  = "csv_xlsx"
-    ARCHIVE   = "archive"
-    TEXT      = "text"
+    EMAIL      = "email"
+    PDF        = "pdf"
+    DOCX       = "docx"
+    IMAGE      = "image"
+    SCREENSHOT = "screenshot"
+    RECEIPT    = "receipt"
+    AUDIO      = "audio"
+    VIDEO      = "video"
+    WEB_DOM    = "web_dom"
+    CSV_XLSX   = "csv_xlsx"
+    ARCHIVE    = "archive"
+    TEXT       = "text"
+
 
 
 # ---------------------------------------------------------------------------
