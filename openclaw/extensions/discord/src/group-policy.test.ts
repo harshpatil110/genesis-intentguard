@@ -1,0 +1,225 @@
+// Discord tests pin guild/channel ScopeTree policy precedence.
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
+import { afterEach, describe, expect, it } from "vitest";
+import { setDiscordPolicyBindings } from "./channel-policy-state.js";
+import {
+  resolveDiscordGroupRequireMention,
+  resolveDiscordGroupToolPolicy,
+} from "./group-policy.js";
+
+function createCfg(discord: Record<string, unknown>): OpenClawConfig {
+  return { channels: { discord } } as OpenClawConfig;
+}
+
+describe("discord group policy", () => {
+  afterEach(() => {
+    setDiscordPolicyBindings("default", []);
+    setDiscordPolicyBindings("work", []);
+  });
+
+  it.each(["ops", "#ops", "2026"])("binds resolved name key %s to its channel id", (channelKey) => {
+    const cfg = createCfg({
+      guilds: {
+        guild: {
+          requireMention: true,
+          tools: { deny: ["exec"] },
+          channels: {
+            [channelKey]: {
+              requireMention: false,
+              tools: { allow: ["exec"] },
+              toolsBySender: { "id:alice": { allow: ["privileged"] } },
+            },
+          },
+        },
+      },
+    });
+    setDiscordPolicyBindings("default", [{ guildKey: "guild", channelKey, channelId: "246" }]);
+    const context = { cfg, groupSpace: "guild", groupChannel: `#${channelKey.replace(/^#/, "")}` };
+
+    // A thread or renamed channel can share the display name, but not the resolved id.
+    expect(resolveDiscordGroupToolPolicy({ ...context, groupId: "999" })).toEqual({
+      deny: ["exec"],
+    });
+    expect(
+      resolveDiscordGroupToolPolicy({ ...context, groupId: "999", senderId: "alice" }),
+    ).toEqual({ deny: ["exec"] });
+    expect(resolveDiscordGroupRequireMention({ ...context, groupId: "999" })).toBe(true);
+    expect(resolveDiscordGroupToolPolicy({ ...context, groupId: "246" })).toEqual({
+      allow: ["exec"],
+    });
+    expect(resolveDiscordGroupRequireMention({ ...context, groupId: "246" })).toBe(false);
+    expect(
+      resolveDiscordGroupToolPolicy({ ...context, groupId: "246", senderId: "alice" }),
+    ).toEqual({ allow: ["privileged"] });
+    // The bound channel keeps its entry after its own rename.
+    expect(
+      resolveDiscordGroupToolPolicy({ ...context, groupId: "246", groupChannel: "#general" }),
+    ).toEqual({ allow: ["exec"] });
+  });
+
+  it("keeps unresolved name keys matching by name within their own account", () => {
+    const guilds = {
+      guild: {
+        requireMention: true,
+        tools: { deny: ["exec"] },
+        channels: { ops: { requireMention: false, tools: { allow: ["exec"] } } },
+      },
+    };
+    setDiscordPolicyBindings("work", [{ guildKey: "guild", channelKey: "ops", channelId: "246" }]);
+    const context = {
+      cfg: createCfg({ guilds, accounts: { work: { guilds } } }),
+      groupSpace: "guild",
+      groupId: "999",
+      groupChannel: "#ops",
+    };
+
+    expect(resolveDiscordGroupToolPolicy(context)).toEqual({ allow: ["exec"] });
+    expect(resolveDiscordGroupRequireMention(context)).toBe(false);
+    expect(resolveDiscordGroupToolPolicy({ ...context, accountId: "work" })).toEqual({
+      deny: ["exec"],
+    });
+  });
+
+  it("prefers an id entry over a matching name entry", () => {
+    setDiscordPolicyBindings("default", [
+      { guildKey: "guild", channelKey: "ops", channelId: "246" },
+    ]);
+    const context = {
+      cfg: createCfg({
+        guilds: {
+          guild: {
+            channels: {
+              "246": { requireMention: true, tools: { deny: ["exec"] } },
+              ops: { requireMention: false, tools: { allow: ["exec"] } },
+            },
+          },
+        },
+      }),
+      groupSpace: "guild",
+      groupId: "246",
+      groupChannel: "#ops",
+    };
+
+    expect(resolveDiscordGroupToolPolicy(context)).toEqual({ deny: ["exec"] });
+    expect(resolveDiscordGroupRequireMention(context)).toBe(true);
+  });
+
+  it("prefers a channel sender policy over the guild plain policy", () => {
+    const cfg = createCfg({
+      guilds: {
+        guild: {
+          tools: { deny: ["guild"] },
+          channels: {
+            channel: {
+              toolsBySender: { "id:alice": { allow: ["channel-sender"] } },
+            },
+          },
+        },
+      },
+    });
+
+    expect(
+      resolveDiscordGroupToolPolicy({
+        cfg,
+        groupSpace: "guild",
+        groupId: "channel",
+        senderId: "alice",
+      }),
+    ).toEqual({ allow: ["channel-sender"] });
+    expect(
+      resolveDiscordGroupToolPolicy({
+        cfg,
+        groupSpace: "guild",
+        groupId: "channel",
+        senderId: "bob",
+      }),
+    ).toEqual({ deny: ["guild"] });
+  });
+
+  it("does not use a channel wildcard as fallback", () => {
+    expect(
+      resolveDiscordGroupToolPolicy({
+        cfg: createCfg({
+          guilds: {
+            guild: {
+              tools: { allow: ["guild"] },
+              channels: {
+                "*": { tools: { deny: ["channel-wildcard"] } },
+              },
+            },
+          },
+        }),
+        groupSpace: "guild",
+        groupId: "missing",
+      }),
+    ).toEqual({ allow: ["guild"] });
+  });
+
+  it("uses the wildcard guild only when no guild matches", () => {
+    const cfg = createCfg({
+      guilds: {
+        "*": {
+          requireMention: false,
+          tools: { allow: ["wildcard"] },
+        },
+        exact: {},
+      },
+    });
+
+    expect(resolveDiscordGroupRequireMention({ cfg, groupSpace: "exact" })).toBe(true);
+    expect(resolveDiscordGroupToolPolicy({ cfg, groupSpace: "exact" })).toBeUndefined();
+    expect(resolveDiscordGroupRequireMention({ cfg, groupSpace: "missing" })).toBe(false);
+    expect(resolveDiscordGroupToolPolicy({ cfg, groupSpace: "missing" })).toEqual({
+      allow: ["wildcard"],
+    });
+  });
+
+  it("matches normalized and hash-prefixed channel slugs", () => {
+    const cfg = createCfg({
+      guilds: {
+        guild: {
+          channels: {
+            general: { tools: { allow: ["normalized"] } },
+            "#ops-room": { tools: { allow: ["hash"] } },
+          },
+        },
+      },
+    });
+
+    expect(
+      resolveDiscordGroupToolPolicy({ cfg, groupSpace: "guild", groupChannel: "#General" }),
+    ).toEqual({ allow: ["normalized"] });
+    expect(
+      resolveDiscordGroupToolPolicy({ cfg, groupSpace: "guild", groupChannel: "Ops Room" }),
+    ).toEqual({ allow: ["hash"] });
+  });
+
+  it("keeps an account empty guild map from inheriting root guilds", () => {
+    expect(
+      resolveDiscordGroupRequireMention({
+        cfg: createCfg({
+          guilds: { guild: { requireMention: false } },
+          accounts: { work: { guilds: {} } },
+        }),
+        accountId: "work",
+        groupSpace: "guild",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps slash-bearing flat scope keys collision-free", () => {
+    const cfg = createCfg({
+      guilds: {
+        "a/channel:b": { tools: { allow: ["slash-guild"] } },
+        a: { channels: { b: { tools: { allow: ["nested-channel"] } } } },
+      },
+    });
+
+    expect(resolveDiscordGroupToolPolicy({ cfg, groupSpace: "a/channel:b" })).toEqual({
+      allow: ["slash-guild"],
+    });
+    expect(resolveDiscordGroupToolPolicy({ cfg, groupSpace: "a", groupId: "b" })).toEqual({
+      allow: ["nested-channel"],
+    });
+  });
+});

@@ -1,0 +1,245 @@
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+import {
+  appendChatMessageToCache,
+  cacheChatSessionSnapshot,
+  clearChatMessagesFromCache,
+  createChatWidgetLayout,
+  readChatMessagesFromCache,
+  readChatSessionSnapshot,
+  type ChatMessageCache,
+} from "./session-message-cache.ts";
+
+function createHost() {
+  return {
+    assistantAgentId: "ops",
+    agentsList: { defaultId: "ops", mainKey: "home" },
+  };
+}
+
+function createCacheContext() {
+  return { host: createHost(), cache: new Map() as ChatMessageCache };
+}
+
+function cacheChatMessages(
+  cache: ChatMessageCache,
+  host: Parameters<typeof cacheChatSessionSnapshot>[1],
+  target: Parameters<typeof cacheChatSessionSnapshot>[2],
+  messages: unknown[],
+): void {
+  cacheChatSessionSnapshot(cache, host, target, {
+    messages,
+    pagination: { hasMore: false },
+    sessionId: null,
+  });
+}
+
+function cacheHomeSnapshot(
+  cache: ChatMessageCache,
+  host: Parameters<typeof cacheChatSessionSnapshot>[1],
+  snapshot: Parameters<typeof cacheChatSessionSnapshot>[3],
+): void {
+  cacheChatSessionSnapshot(cache, host, { sessionKey: "home" }, snapshot);
+}
+
+describe("session message cache", () => {
+  it.each([
+    {
+      name: "Matrix room and thread IDs",
+      sessionKey: "Agent:Ops:Matrix:Channel:!Room:Example.Org:Thread:$Event",
+      canonicalKey: "agent:ops:matrix:channel:!Room:Example.Org:thread:$Event",
+      distinctKey: "agent:ops:matrix:channel:!Room:Example.Org:thread:$event",
+    },
+    {
+      name: "Signal group IDs with a normalized thread suffix",
+      sessionKey: "Agent:Ops:Signal:Group:AbC123=:Thread:XyZ",
+      canonicalKey: "agent:ops:signal:group:AbC123=:thread:xyz",
+      distinctKey: "agent:ops:signal:group:abc123=:thread:xyz",
+    },
+  ])(
+    "keeps case-distinct $name in separate transcript caches",
+    ({ sessionKey, canonicalKey, distinctKey }) => {
+      const { host, cache } = createCacheContext();
+
+      cacheChatMessages(cache, host, { sessionKey }, ["first session"]);
+      cacheChatMessages(cache, host, { sessionKey: distinctKey }, ["second session"]);
+
+      expect(readChatMessagesFromCache(cache, host, { sessionKey: canonicalKey })).toEqual([
+        "first session",
+      ]);
+      expect(readChatMessagesFromCache(cache, host, { sessionKey: distinctKey })).toEqual([
+        "second session",
+      ]);
+
+      appendChatMessageToCache(cache, host, { sessionKey: canonicalKey }, "first session update");
+
+      expect(readChatMessagesFromCache(cache, host, { sessionKey })).toEqual([
+        "first session",
+        "first session update",
+      ]);
+      expect(readChatMessagesFromCache(cache, host, { sessionKey: distinctKey })).toEqual([
+        "second session",
+      ]);
+
+      clearChatMessagesFromCache(cache, host, { sessionKey: distinctKey });
+
+      expect(readChatMessagesFromCache(cache, host, { sessionKey })).toEqual([
+        "first session",
+        "first session update",
+      ]);
+      expect(readChatMessagesFromCache(cache, host, { sessionKey: distinctKey })).toEqual([]);
+    },
+  );
+
+  it("uses explicit event agent identity for global cache targets", () => {
+    const host = {
+      assistantAgentId: "work",
+      agentsList: { defaultId: "main", mainKey: "main" },
+    };
+    const cache: ChatMessageCache = new Map();
+
+    cacheChatMessages(cache, host, { sessionKey: "global" }, ["work"]);
+    cacheChatMessages(cache, host, { sessionKey: "global", agentId: "main" }, ["main"]);
+
+    expect(readChatMessagesFromCache(cache, host, { sessionKey: "global" })).toEqual(["work"]);
+    expect(
+      readChatMessagesFromCache(cache, host, { sessionKey: "global", agentId: "main" }),
+    ).toEqual(["main"]);
+  });
+
+  it("claims a shared gateway event only once across retained panes", () => {
+    const { host, cache } = createCacheContext();
+    const target = { sessionKey: "agent:ops:background" };
+    const cached = { role: "user", content: "cached", __openclaw: { id: "cached", seq: 1 } };
+    const final = { role: "assistant", content: "final", __openclaw: { id: "final", seq: 2 } };
+    const event = { messageId: "final", messageSeq: 2 };
+    cacheChatMessages(cache, host, target, [cached]);
+
+    appendChatMessageToCache(cache, host, target, final, event);
+    appendChatMessageToCache(cache, host, target, final, event);
+
+    expect(readChatMessagesFromCache(cache, host, target)).toEqual([cached, final]);
+  });
+
+  it("does not retain history across backing session changes", () => {
+    const { host, cache } = createCacheContext();
+    cacheHomeSnapshot(cache, host, {
+      messages: [{ content: "old", __openclaw: { seq: 1 } }],
+      pagination: { hasMore: false, totalMessages: 1 },
+      sessionId: "session-1",
+      widgetHeights: { "canvas:preview": 700 },
+    });
+    const replacement = [{ content: "new", __openclaw: { seq: 1 } }];
+    const layout = createChatWidgetLayout(cache, host, { sessionKey: "home" });
+
+    cacheHomeSnapshot(cache, host, {
+      messages: replacement,
+      pagination: { hasMore: false, totalMessages: 1 },
+      sessionId: "session-2",
+    });
+
+    expect(readChatSessionSnapshot(cache, host, { sessionKey: "home" })?.messages).toEqual(
+      replacement,
+    );
+    layout.write("canvas:preview", 800);
+    expect(layout.read("canvas:preview")).toBeUndefined();
+    expect(
+      readChatSessionSnapshot(cache, host, { sessionKey: "home" })?.widgetHeights,
+    ).toBeUndefined();
+  });
+
+  it("retains bounded widget sizes through history refreshes within their session", () => {
+    const { host, cache } = createCacheContext();
+    const snapshot = {
+      messages: ["widget"],
+      pagination: { hasMore: false as const },
+      sessionId: "session-1",
+    };
+    cacheHomeSnapshot(cache, host, snapshot);
+    const layout = createChatWidgetLayout(cache, host, { sessionKey: "home" });
+    layout.write("canvas:preview", 700);
+    cacheHomeSnapshot(cache, host, { ...snapshot, messages: ["refreshed widget"] });
+    expect(layout.read("canvas:preview")).toBe(700);
+    layout.write("canvas:preview", Number.NaN);
+    expect(layout.read("canvas:preview")).toBe(700);
+    for (let index = 0; index < 100; index++) {
+      layout.write(`canvas:${index}`, 480);
+    }
+    expect(layout.read("canvas:preview")).toBeUndefined();
+    expect(layout.read("canvas:99")).toBe(480);
+    clearChatMessagesFromCache(cache, host, { sessionKey: "home" });
+    layout.write("canvas:99", 600);
+    expect(layout.read("canvas:99")).toBeUndefined();
+  });
+
+  it("records a widget rendered before its session snapshot was cached", () => {
+    const { host, cache } = createCacheContext();
+    const layout = createChatWidgetLayout(cache, host, { sessionKey: "home" });
+    expect(layout.read("canvas:preview")).toBeUndefined();
+    cacheHomeSnapshot(cache, host, {
+      messages: ["widget"],
+      pagination: { hasMore: false },
+      sessionId: "session-1",
+    });
+    layout.write("canvas:preview", 700);
+    expect(readChatSessionSnapshot(cache, host, { sessionKey: "home" })?.widgetHeights).toEqual({
+      "canvas:preview": 700,
+    });
+  });
+
+  it("removes an empty identity-free snapshot after a cleared session reload", () => {
+    const { host, cache } = createCacheContext();
+    cacheChatMessages(cache, host, { sessionKey: "home" }, ["stale"]);
+
+    cacheHomeSnapshot(cache, host, {
+      messages: [],
+      pagination: { hasMore: false },
+      sessionId: null,
+    });
+
+    expect(readChatSessionSnapshot(cache, host, { sessionKey: "home" })).toBeNull();
+  });
+
+  it("caps an oversized snapshot at a raw transcript boundary", () => {
+    const { host, cache } = createCacheContext();
+    const content = "x".repeat(4 * 1024 * 1024);
+    cacheHomeSnapshot(cache, host, {
+      messages: [
+        { content, __openclaw: { seq: 1 } },
+        { content, projection: "sibling", __openclaw: { seq: 1 } },
+        { content, __openclaw: { seq: 2 } },
+      ],
+      pagination: { hasMore: false, totalMessages: 2 },
+      sessionId: "session-1",
+    });
+
+    const snapshot = readChatSessionSnapshot(cache, host, { sessionKey: "home" });
+    expect(snapshot?.messages).toHaveLength(1);
+    expect(snapshot?.pagination).toEqual({
+      hasMore: true,
+      nextOffset: 1,
+      totalMessages: 2,
+    });
+  });
+
+  it("evicts whole least-recently-used snapshots when the global budget is exceeded", () => {
+    const { host, cache } = createCacheContext();
+    const content = "x".repeat(9 * 1024 * 1024);
+    for (const sessionKey of ["one", "two", "three"]) {
+      cacheChatSessionSnapshot(
+        cache,
+        host,
+        { sessionKey },
+        {
+          messages: [{ content, __openclaw: { seq: 1 } }],
+          pagination: { hasMore: false, totalMessages: 1 },
+          sessionId: sessionKey,
+        },
+      );
+    }
+
+    expect(readChatSessionSnapshot(cache, host, { sessionKey: "one" })).toBeNull();
+    expect(readChatSessionSnapshot(cache, host, { sessionKey: "two" })).not.toBeNull();
+    expect(readChatSessionSnapshot(cache, host, { sessionKey: "three" })).not.toBeNull();
+  });
+});
