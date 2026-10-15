@@ -392,3 +392,30 @@ def test_direct_decloak_endpoint_with_audio(client: TestClient):
     assert data["modality"] == "audio"
     assert data["threat_detected"] is False
     assert data["visible_clean_text"] == "Clean voice memo."
+
+
+# ---------------------------------------------------------------------------
+# Test 9: Live Host System Multimedia Dependencies (FFmpeg & Local Whisper Weights)
+# ---------------------------------------------------------------------------
+
+def test_live_ffmpeg_and_whisper_host_installation():
+    """Verify that FFmpeg binary is installed in PATH and Whisper base.pt weights are cached locally."""
+    import os
+    import shutil
+    import whisper
+
+    # 1. Verify FFmpeg binary in host PATH
+    ffmpeg_bin = shutil.which("ffmpeg")
+    assert ffmpeg_bin is not None, "FFmpeg binary must be installed and accessible in Windows PATH"
+    assert os.path.isfile(ffmpeg_bin)
+
+    # 2. Verify local Whisper base.pt weights exist in cache directory
+    whisper_cache_dir = os.path.expanduser("~/.cache/whisper")
+    base_model_path = os.path.join(whisper_cache_dir, "base.pt")
+    assert os.path.isfile(base_model_path), f"Whisper base model weights must exist at {base_model_path}"
+    assert os.path.getsize(base_model_path) > 100 * 1024 * 1024, "Whisper base model file must be >100MB"
+
+    # 3. Verify Whisper loads the local model without errors
+    model = whisper.load_model("base")
+    assert model is not None
+
