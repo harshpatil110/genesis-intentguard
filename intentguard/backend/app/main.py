@@ -95,6 +95,28 @@ async def reset_policy_budget(session_id: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Layer 1 Document De-Cloak Direct Inspection Endpoint
+# ---------------------------------------------------------------------------
+import base64
+from app.layer1_decloaker.pdf_docx_decloaker import DocumentDeCloakResult, pdf_docx_decloaker
+from app.openclaw_bridge.interceptor import DocumentDeCloakRequest
+
+
+@app.post("/internal/decloak/document", response_model=DocumentDeCloakResult)
+async def decloak_document_root(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
+    """
+    Direct inspection endpoint for Forensic X-Ray UI and testing.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF or DOCX file.
+    """
+    file_bytes = base64.b64decode(req.raw_content_base64)
+    return pdf_docx_decloaker.decloak_document(
+        file_bytes=file_bytes,
+        filename=req.filename,
+        modality=req.modality,
+    )
+
+
+# ---------------------------------------------------------------------------
 # WebSocket Telemetry Stream Endpoint
 # ---------------------------------------------------------------------------
 @app.websocket("/ws/xray-stream")

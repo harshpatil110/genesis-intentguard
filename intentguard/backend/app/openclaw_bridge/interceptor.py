@@ -29,6 +29,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.layer1_decloaker.pdf_docx_decloaker import (
+    DocumentDeCloakResult,
+    pdf_docx_decloaker,
+)
 from app.layer2_camel.intent_contract import (
     Step0IntentContract,
     compile_step0_intent_contract,
@@ -291,21 +295,58 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         session_taint_registry[req.session_id] = True
         resource_budget_enforcer.downgrade_permissions_for_untrusted_data(req.session_id)
 
-    # ── 3. Baseline threat scan ──────────────────────────────────────────────
+    # ── 3. Pre-OCR Document De-Cloaker (PDF & DOCX) ──────────────────────────
+    cloaked_threats: List[Dict] = []
+    surgical_redactions: List[Dict] = []
     text_to_scan = req.raw_content_text or ""
-    injection_findings = _detect_injections(text_to_scan)
-    threat_detected = len(injection_findings) > 0
-    risk_category_ids: List[int] = [10, 11] if threat_detected else []
+    threat_detected = False
+    risk_category_ids: List[int] = []
 
-    # Check for disguised Windows executable header (MZ)
-    if req.raw_content_base64:
+    is_doc_modality = (
+        req.modality in (InputModality.PDF, InputModality.DOCX)
+        or req.source_uri_or_filename.lower().endswith((".pdf", ".docx"))
+    )
+
+    if is_doc_modality and req.raw_content_base64:
+        try:
+            decoded_bytes = base64.b64decode(req.raw_content_base64)
+            # Check for disguised Windows executable header (MZ)
+            if decoded_bytes.startswith(_MZ_MAGIC):
+                threat_detected = True
+                risk_category_ids.append(2)
+                cloaked_threats.append({
+                    "pattern": "MZ_HEADER",
+                    "match": "Disguised Windows executable (MZ header) detected",
+                    "position": 0,
+                })
+            else:
+                mod_str = req.modality.value if hasattr(req.modality, "value") else str(req.modality)
+                decloak_res = pdf_docx_decloaker.decloak_document(
+                    file_bytes=decoded_bytes,
+                    filename=req.source_uri_or_filename,
+                    modality=mod_str,
+                )
+                raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                if decloak_res.threat_detected:
+                    threat_detected = True
+                    for r_id in decloak_res.risk_category_ids:
+                        if r_id not in risk_category_ids:
+                            risk_category_ids.append(r_id)
+                    for finding in decloak_res.cloaked_findings:
+                        cloaked_threats.append(finding.model_dump())
+                text_to_scan = decloak_res.visible_clean_text
+        except Exception as exc:
+            logger.warning("Error running PDF/DOCX de-cloaker: %s", exc)
+
+    # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX
+    elif req.raw_content_base64:
         try:
             decoded_bytes = base64.b64decode(req.raw_content_base64)
             if decoded_bytes.startswith(_MZ_MAGIC):
                 threat_detected = True
                 if 2 not in risk_category_ids:
                     risk_category_ids.append(2)
-                injection_findings.append({
+                cloaked_threats.append({
                     "pattern": "MZ_HEADER",
                     "match": "Disguised Windows executable (MZ header) detected",
                     "position": 0,
@@ -313,28 +354,32 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         except Exception:
             pass
 
-    cloaked_threats: List[Dict] = []
-    surgical_redactions: List[Dict] = []
-    sanitized_text = text_to_scan
+    # ── 3b. Baseline threat scan on visible text ─────────────────────────────
+    injection_findings = _detect_injections(text_to_scan)
+    if injection_findings:
+        threat_detected = True
+        for rid in [10, 11]:
+            if rid not in risk_category_ids:
+                risk_category_ids.append(rid)
+        for inf in injection_findings:
+            cloaked_threats.append(inf)
 
-    if threat_detected:
-        cloaked_threats = injection_findings
-        # Surgically redact injection phrases from the text
-        for pat in _INJECTION_PATTERNS:
-            if pat.search(sanitized_text):
-                original = pat.search(sanitized_text).group(0)  # type: ignore[union-attr]
-                sanitized_text = pat.sub("[REDACTED_INJECTION]", sanitized_text)
-                surgical_redactions.append({
-                    "original": original,
-                    "replacement": "[REDACTED_INJECTION]",
-                })
+    sanitized_text = text_to_scan
+    for pat in _INJECTION_PATTERNS:
+        if pat.search(sanitized_text):
+            original = pat.search(sanitized_text).group(0)  # type: ignore[union-attr]
+            sanitized_text = pat.sub("[REDACTED_INJECTION]", sanitized_text)
+            surgical_redactions.append({
+                "original": original,
+                "replacement": "[REDACTED_INJECTION]",
+            })
 
     # ── 4. Compute redacted diff SHA-256 ────────────────────────────────────
     diff_record = f"ORIGINAL:{raw_evidence_sha256}|SANITIZED:{sanitized_text}"
     redacted_diff_sha256 = _sha256_hex(diff_record)
 
     # ── 5. Build response ────────────────────────────────────────────────────
-    action_taken = "SURGICALLY_REDACTED" if surgical_redactions else "SAFE_EXECUTED"
+    action_taken = "SURGICALLY_REDACTED" if (surgical_redactions or cloaked_threats) else "SAFE_EXECUTED"
     response = InboundInterceptResponse(
         intercept_id=intercept_id,
         session_id=req.session_id,
@@ -872,5 +917,29 @@ async def get_step0_intent(session_id: str) -> Step0IntentContract:
             detail=f"No Step-0 Intent Contract locked for session '{session_id}'.",
         )
     return contract
+
+
+# ========================= DOCUMENT DE-CLOAK INSPECTION ENDPOINT ============
+
+class DocumentDeCloakRequest(BaseModel):
+    """Payload to de-cloak a document for X-Ray inspection."""
+    filename: str = "document.pdf"
+    modality: Optional[str] = None
+    raw_content_base64: str
+
+
+@interceptor_router.post("/decloak/document", response_model=DocumentDeCloakResult)
+async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
+    """
+    Direct inspection endpoint for Forensic X-Ray UI and testing.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF or DOCX file.
+    """
+    file_bytes = base64.b64decode(req.raw_content_base64)
+    return pdf_docx_decloaker.decloak_document(
+        file_bytes=file_bytes,
+        filename=req.filename,
+        modality=req.modality,
+    )
+
 
 
