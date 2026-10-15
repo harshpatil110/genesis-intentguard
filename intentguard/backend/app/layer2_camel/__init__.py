@@ -3,9 +3,13 @@ IntentGuard Layer 2 CaMeL Dual-LLM & Authority Plane
 =====================================================
 GENESIS 2.0 | Track: EVA 03 | PS 01
 
-Provides Step-0 Cryptographic Intent Contracts (HMAC-SHA256 Authority Lock),
-Context-Aware Business Language Disambiguation, Surgical Redaction, deterministic
-Hyperledger Fabric diff hashing, and the CaMeL Data Plane Quarantined Reader (Q-LLM).
+Provides:
+- Step-0 Cryptographic Intent Contracts (HMAC-SHA256 Authority Lock)
+- Context-Aware Business Language Disambiguation & Surgical Redactor
+- Deterministic Hyperledger Fabric diff hashing (redacted_diff_sha256)
+- CaMeL Data Plane Quarantined Reader (Q-LLM) with Zero Tool Access
+- Runtime Provenance Taint Wrapper (ProvenanceEnvelope)
+- CaMeL Control Plane Privileged Planner (P-LLM)
 """
 
 from app.layer2_camel.intent_contract import (
@@ -46,6 +50,17 @@ from app.layer2_camel.quarantined_reader import (
     QuarantinedReaderLLM,
     quarantined_reader,
 )
+from app.layer2_camel.provenance_wrapper import (
+    ProvenanceEnvelope,
+    ProvenanceOrigin,
+    wrap_extracted_schema,
+    wrap_trusted_db,
+    wrap_user_intent,
+)
+from app.layer2_camel.privileged_planner import (
+    PrivilegedPlannerLLM,
+    privileged_planner,
+)
 
 __all__ = [
     # Intent Contract
@@ -81,4 +96,13 @@ __all__ = [
     "quarantined_reader",
     "SPOTLIGHT_START",
     "SPOTLIGHT_END",
+    # Provenance Wrapper
+    "ProvenanceEnvelope",
+    "ProvenanceOrigin",
+    "wrap_extracted_schema",
+    "wrap_trusted_db",
+    "wrap_user_intent",
+    # Privileged Planner
+    "PrivilegedPlannerLLM",
+    "privileged_planner",
 ]
