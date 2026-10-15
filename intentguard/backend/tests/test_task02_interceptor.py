@@ -25,6 +25,7 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+from app.layer3_policy.resource_budget import resource_budget_enforcer
 from app.main import app
 from app.openclaw_bridge.interceptor import session_taint_registry
 from app.openclaw_bridge.telemetry_ws import telemetry_manager
@@ -41,8 +42,10 @@ def client():
 def reset_state():
     """Reset the session taint registry and telemetry before each test."""
     session_taint_registry.clear()
+    resource_budget_enforcer.sessions.clear()
     yield
     session_taint_registry.clear()
+    resource_budget_enforcer.sessions.clear()
 
 
 # ===========================================================================

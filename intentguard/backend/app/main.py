@@ -72,6 +72,29 @@ async def health_check() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Layer 3 Policy & Resource Budget Endpoints
+# ---------------------------------------------------------------------------
+from app.layer3_policy.resource_budget import resource_budget_enforcer
+
+
+@app.get("/internal/policy/budget/{session_id}")
+async def get_policy_budget(session_id: str) -> Dict[str, Any]:
+    """Expose session budget metrics under Layer 3 Policy Gateway."""
+    return resource_budget_enforcer.get_session_metrics(session_id)
+
+
+@app.post("/internal/policy/budget/{session_id}/reset")
+async def reset_policy_budget(session_id: str) -> Dict[str, Any]:
+    """Reset session budget metrics under Layer 3 Policy Gateway."""
+    resource_budget_enforcer.reset_session(session_id)
+    return {
+        "session_id": session_id,
+        "status": "reset_successful",
+        "message": f"Policy budget for session '{session_id}' has been reset.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # WebSocket Telemetry Stream Endpoint
 # ---------------------------------------------------------------------------
 @app.websocket("/ws/xray-stream")

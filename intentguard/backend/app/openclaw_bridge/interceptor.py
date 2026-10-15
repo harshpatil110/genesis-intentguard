@@ -28,6 +28,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter
 
 from app.config import settings
+from app.layer3_policy.resource_budget import resource_budget_enforcer
 from app.openclaw_bridge.models import (
     InboundInterceptRequest,
     InboundInterceptResponse,
@@ -216,9 +217,55 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
     ) + (req.raw_content_base64 or "") + req.source_uri_or_filename
     raw_evidence_sha256 = _sha256_hex(raw_payload)
 
+    # ── 1b. Step-0 Inbound Payload & Resource Budget Check ──────────────────
+    declared_size = req.metadata.get("file_size_bytes") or req.metadata.get("file_size")
+    budget_res = resource_budget_enforcer.check_inbound_payload_budget(
+        session_id=req.session_id,
+        raw_text=req.raw_content_text,
+        raw_base64=req.raw_content_base64,
+        declared_size_bytes=declared_size,
+    )
+    if not budget_res.allowed:
+        event = _telemetry_event(
+            session_id=req.session_id,
+            hook_stage="HOOK_1_INBOUND",
+            modality_or_tool=req.modality.value,
+            threat_detected=True,
+            action_taken="BLOCKED",
+            risk_category_ids=budget_res.risk_category_ids,
+            summary=f"[BUDGET BLOCKED] {budget_res.reason}",
+            details={
+                "intercept_id": intercept_id,
+                "violation_type": budget_res.violation_type,
+                "reason": budget_res.reason,
+                "metrics": budget_res.current_metrics,
+                "raw_sha256": raw_evidence_sha256,
+            },
+        )
+        await telemetry_manager.broadcast_event(event)
+        logger.warning(
+            "Hook1 [%s] session=%s BLOCKED by budget engine: %s",
+            intercept_id, req.session_id, budget_res.reason,
+        )
+        return InboundInterceptResponse(
+            intercept_id=intercept_id,
+            session_id=req.session_id,
+            allowed_to_proceed=False,
+            provenance_tag="UNTRUSTED_EXT",
+            sanitized_text=f"[BLOCKED BY RESOURCE BUDGET ENGINE: {budget_res.reason}]",
+            cloaked_threats_removed=[],
+            surgical_redactions=[],
+            raw_evidence_sha256=raw_evidence_sha256,
+            redacted_diff_sha256=_sha256_hex(f"BLOCKED:{raw_evidence_sha256}"),
+            risk_category_ids=budget_res.risk_category_ids,
+            threat_detected=True,
+            action_taken="BLOCKED",
+        )
+
     # ── 2. Mark session as tainted if external modality ─────────────────────
     if req.modality in _EXTERNAL_MODALITIES:
         session_taint_registry[req.session_id] = True
+        resource_budget_enforcer.downgrade_permissions_for_untrusted_data(req.session_id)
 
     # ── 3. Baseline threat scan ──────────────────────────────────────────────
     text_to_scan = req.raw_content_text or ""
@@ -318,6 +365,48 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
     Evaluates every tool invocation against the Deterministic Policy Gateway.
     """
     intercept_id = _new_id()
+
+    # ── 0. Step-0 Deterministic Policy & Resource Budget Check ───────────────
+    budget_res = resource_budget_enforcer.check_tool_call_budget(
+        session_id=req.session_id,
+        tool_name=req.tool_name,
+        tool_arguments=req.tool_arguments,
+    )
+    if not budget_res.allowed:
+        event = _telemetry_event(
+            session_id=req.session_id,
+            hook_stage="HOOK_2_TOOL_CALL",
+            modality_or_tool=req.tool_name,
+            threat_detected=True,
+            action_taken="BLOCKED",
+            risk_category_ids=budget_res.risk_category_ids,
+            summary=f"[BUDGET BLOCKED] Tool '{req.tool_name}' blocked: {budget_res.reason}",
+            details={
+                "intercept_id": intercept_id,
+                "tool": req.tool_name,
+                "violation_type": budget_res.violation_type,
+                "metrics": budget_res.current_metrics,
+                "reason": budget_res.reason,
+            },
+        )
+        await telemetry_manager.broadcast_event(event)
+        logger.warning(
+            "Hook2 [%s] session=%s tool=%s BLOCKED by budget engine: %s",
+            intercept_id, req.session_id, req.tool_name, budget_res.reason,
+        )
+        return ToolCallInterceptResponse(
+            intercept_id=intercept_id,
+            session_id=req.session_id,
+            execution_permitted=False,
+            requires_human_approval_card=False,
+            approval_card_id=None,
+            action_taken="BLOCKED",
+            policy_reference=budget_res.policy_reference,
+            reason=budget_res.reason,
+            execution_token_hmac=None,
+            risk_category_ids=budget_res.risk_category_ids,
+            threat_detected=True,
+        )
 
     # ── 1. Determine if any argument carries UNTRUSTED_EXT provenance ────────
     has_untrusted_arg = any(
@@ -609,3 +698,23 @@ async def get_telemetry_history() -> dict:
         "total": len(history),
         "events": [e.model_dump() for e in history],
     }
+
+
+# ========================= RESOURCE BUDGET OBSERVABILITY =====================
+
+@interceptor_router.get("/budget/{session_id}")
+async def get_session_budget(session_id: str) -> dict:
+    """Return real-time resource budget metrics and loop counters for a session."""
+    return resource_budget_enforcer.get_session_metrics(session_id)
+
+
+@interceptor_router.post("/budget/{session_id}/reset")
+async def reset_session_budget(session_id: str) -> dict:
+    """Reset budget counters and unlock an aborted session."""
+    resource_budget_enforcer.reset_session(session_id)
+    return {
+        "session_id": session_id,
+        "status": "reset_successful",
+        "message": f"Resource budget for session '{session_id}' has been reset.",
+    }
+
