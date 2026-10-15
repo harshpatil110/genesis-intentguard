@@ -111,6 +111,10 @@ class Settings(BaseSettings):
     # Comma-separated; use allowed_domains_list property for List[str]
     ALLOWED_OUTBOUND_DOMAINS: str = "localhost,127.0.0.1,api.groq.com"
 
+    # Enterprise Internal Domain & Freemail domains (Task 09 Email/Chat Scanner)
+    INTERNAL_DOMAIN: str = "enterprise.internal"
+    FREEMAIL_DOMAINS: str = "gmail.com,yahoo.com,hotmail.com,outlook.com,protonmail.com,icloud.com,mail.com,aol.com"
+
     # ------------------------------------------------------------------
     # Supply-Chain default party identifiers
     # ------------------------------------------------------------------
@@ -160,6 +164,11 @@ class Settings(BaseSettings):
     def allowed_domains_list(self) -> List[str]:
         """Parse comma-separated ALLOWED_OUTBOUND_DOMAINS into a list."""
         return [d.strip() for d in self.ALLOWED_OUTBOUND_DOMAINS.split(",") if d.strip()]
+
+    @property
+    def freemail_domains_list(self) -> List[str]:
+        """Parse comma-separated FREEMAIL_DOMAINS into a list of lowercase domain strings."""
+        return [d.strip().lower() for d in self.FREEMAIL_DOMAINS.split(",") if d.strip()]
 
     @property
     def blockchain_audit_events_url(self) -> str:

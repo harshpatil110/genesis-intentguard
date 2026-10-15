@@ -98,7 +98,9 @@ async def reset_policy_budget(session_id: str) -> Dict[str, Any]:
 # Layer 1 Document De-Cloak Direct Inspection Endpoint
 # ---------------------------------------------------------------------------
 import base64
+from typing import Union
 from app.layer1_decloaker.audio_video_decloaker import audio_video_decloaker
+from app.layer1_decloaker.email_chat_scanner import email_chat_scanner
 from app.layer1_decloaker.image_decloaker import image_decloaker
 from app.layer1_decloaker.pdf_docx_decloaker import DocumentDeCloakResult, pdf_docx_decloaker
 from app.layer1_decloaker.web_dom_decloaker import web_dom_decloaker
@@ -109,9 +111,22 @@ from app.openclaw_bridge.interceptor import DocumentDeCloakRequest
 async def decloak_document_root(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
     """
     Direct inspection endpoint for Forensic X-Ray UI and testing.
-    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, Video, or Web DOM file.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, Video, Web DOM, Email, or Chat file.
     """
-    file_bytes = base64.b64decode(req.raw_content_base64)
+    if req.modality in ("email", "chat") or req.filename.lower().endswith((".eml", ".msg")):
+        raw_in: Union[bytes, str] = (
+            base64.b64decode(req.raw_content_base64)
+            if req.raw_content_base64
+            else (req.raw_content_text or "")
+        )
+        return email_chat_scanner.scan_message_bytes(
+            raw_input=raw_in,
+            metadata=req.metadata,
+            modality=req.modality or "email",
+            filename=req.filename,
+        )
+
+    file_bytes = base64.b64decode(req.raw_content_base64) if req.raw_content_base64 else b""
     if req.modality in ("image", "screenshot", "receipt") or req.filename.lower().endswith(
         (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")
     ):

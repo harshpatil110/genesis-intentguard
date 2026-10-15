@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 class InputModality(str, Enum):
     """Supported modalities for Hook 1 inbound data interception."""
     EMAIL      = "email"
+    CHAT       = "chat"
     PDF        = "pdf"
     DOCX       = "docx"
     IMAGE      = "image"

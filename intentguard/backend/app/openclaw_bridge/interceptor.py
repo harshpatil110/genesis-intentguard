@@ -23,7 +23,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -40,6 +40,10 @@ from app.layer1_decloaker.image_decloaker import (
 from app.layer1_decloaker.pdf_docx_decloaker import (
     DocumentDeCloakResult,
     pdf_docx_decloaker,
+)
+from app.layer1_decloaker.email_chat_scanner import (
+    EmailChatScanner,
+    email_chat_scanner,
 )
 from app.layer1_decloaker.web_dom_decloaker import (
     WebDOMDeCloaker,
@@ -123,6 +127,7 @@ _FORGED_TAG_RE = re.compile(r"\[SYSTEM\s+TOOL\s+OUTPUT\]", re.I)
 _EXTERNAL_MODALITIES = frozenset(
     {
         InputModality.EMAIL,
+        InputModality.CHAT,
         InputModality.PDF,
         InputModality.DOCX,
         InputModality.IMAGE,
@@ -337,6 +342,12 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         or bool(req.raw_content_text and ("<html" in req.raw_content_text.lower() or "<body" in req.raw_content_text.lower()))
     )
 
+    is_email_or_chat_modality = (
+        req.modality in (InputModality.EMAIL, InputModality.CHAT, "email", "chat")
+        or req.source_uri_or_filename.lower().endswith((".eml", ".msg"))
+        or req.source_uri_or_filename.lower().startswith(("smtp://", "imap://", "slack://", "teams://"))
+    )
+
     if is_doc_modality and req.raw_content_base64:
         try:
             decoded_bytes = base64.b64decode(req.raw_content_base64)
@@ -474,6 +485,45 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
                 text_to_scan = decloak_res.visible_clean_text
         except Exception as exc:
             logger.warning("Error running Web DOM de-cloaker: %s", exc)
+
+    elif is_email_or_chat_modality and (req.raw_content_text or req.raw_content_base64 or req.metadata):
+        try:
+            raw_input_data: Union[bytes, str] = ""
+            if req.raw_content_base64:
+                decoded_bytes = base64.b64decode(req.raw_content_base64)
+                if decoded_bytes.startswith(_MZ_MAGIC):
+                    threat_detected = True
+                    if 2 not in risk_category_ids:
+                        risk_category_ids.append(2)
+                    cloaked_threats.append({
+                        "pattern": "MZ_HEADER",
+                        "match": "Disguised Windows executable (MZ header) detected",
+                        "position": 0,
+                    })
+                else:
+                    raw_input_data = decoded_bytes
+            elif req.raw_content_text:
+                raw_input_data = req.raw_content_text
+
+            if not threat_detected:
+                mod_str = req.modality.value if hasattr(req.modality, "value") else str(req.modality)
+                decloak_res = email_chat_scanner.scan_message_bytes(
+                    raw_input=raw_input_data,
+                    metadata=req.metadata,
+                    modality=mod_str,
+                    filename=req.source_uri_or_filename,
+                )
+                raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                if decloak_res.threat_detected:
+                    threat_detected = True
+                    for r_id in decloak_res.risk_category_ids:
+                        if r_id not in risk_category_ids:
+                            risk_category_ids.append(r_id)
+                    for finding in decloak_res.cloaked_findings:
+                        cloaked_threats.append(finding.model_dump())
+                text_to_scan = decloak_res.visible_clean_text
+        except Exception as exc:
+            logger.warning("Error running Email/Chat scanner: %s", exc)
 
     # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX/IMAGE
     elif req.raw_content_base64:
@@ -1062,16 +1112,31 @@ class DocumentDeCloakRequest(BaseModel):
     """Payload to de-cloak a document for X-Ray inspection."""
     filename: str = "document.pdf"
     modality: Optional[str] = None
-    raw_content_base64: str
+    raw_content_base64: Optional[str] = None
+    raw_content_text: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 @interceptor_router.post("/decloak/document", response_model=DocumentDeCloakResult)
 async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCloakResult:
     """
     Direct inspection endpoint for Forensic X-Ray UI and testing.
-    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, or Image file.
+    Runs Pre-OCR De-Cloaker on base64-encoded PDF, DOCX, Image, Audio, Video, Web DOM, Email, or Chat file.
     """
-    file_bytes = base64.b64decode(req.raw_content_base64)
+    if req.modality in ("email", "chat") or req.filename.lower().endswith((".eml", ".msg")):
+        raw_in: Union[bytes, str] = (
+            base64.b64decode(req.raw_content_base64)
+            if req.raw_content_base64
+            else (req.raw_content_text or "")
+        )
+        return email_chat_scanner.scan_message_bytes(
+            raw_input=raw_in,
+            metadata=req.metadata,
+            modality=req.modality or "email",
+            filename=req.filename,
+        )
+
+    file_bytes = base64.b64decode(req.raw_content_base64) if req.raw_content_base64 else b""
     if req.modality in ("image", "screenshot", "receipt") or req.filename.lower().endswith(
         (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")
     ):

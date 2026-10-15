@@ -57,7 +57,7 @@ class CloakedSpanFinding(BaseModel):
     Supplies coordinates and color metrics for the Forensic X-Ray Diff UI.
     """
     finding_id: str = Field(default_factory=lambda: f"span-{uuid.uuid4().hex[:8]}")
-    modality: Literal["pdf", "docx", "image", "screenshot", "receipt", "audio", "video", "web_dom"]
+    modality: Literal["pdf", "docx", "image", "screenshot", "receipt", "audio", "video", "web_dom", "email", "chat"]
     page_or_paragraph: int = 1  # 1-indexed page number (PDF) or paragraph/element index
     cloak_reason: Literal[
         "MICRO_FONT_SIZE",
@@ -77,6 +77,10 @@ class CloakedSpanFinding(BaseModel):
         "HIDDEN_CSS_TRAP",
         "POISONED_ARIA_ATTRIBUTE",
         "TRACKING_PIXEL_OR_HIDDEN_IFRAME",
+        "EXECUTIVE_IMPERSONATION",
+        "REPLY_TO_MISMATCH",
+        "SPOOFED_AUTHORIZATION_CLAIM",
+        "FORGED_SYSTEM_OUTPUT",
     ]
     hidden_text: str
     font_size_pt: Optional[float] = None
@@ -90,11 +94,11 @@ class CloakedSpanFinding(BaseModel):
 
 class DocumentDeCloakResult(BaseModel):
     """
-    Outcome of the Pre-OCR De-Cloaker engine for a single PDF, DOCX, Image, Audio, Video, or Web DOM file.
+    Outcome of the Pre-OCR De-Cloaker engine for a single PDF, DOCX, Image, Audio, Video, Web DOM, Email, or Chat file/payload.
     """
     raw_evidence_sha256: str  # 64-char lowercase hex
     redacted_diff_sha256: str  # 64-char lowercase hex
-    modality: Literal["pdf", "docx", "image", "screenshot", "receipt", "audio", "video", "web_dom"]
+    modality: Literal["pdf", "docx", "image", "screenshot", "receipt", "audio", "video", "web_dom", "email", "chat"]
     visible_clean_text: str
     raw_unfiltered_text: str
     cloaked_findings: List[CloakedSpanFinding] = Field(default_factory=list)
