@@ -9,6 +9,10 @@ opaque vector occlusions, suspicious metadata, embedded JavaScript,
 and DOCX hidden runs.
 """
 
+from app.layer1_decloaker.audio_video_decloaker import (
+    AudioVideoDeCloaker,
+    audio_video_decloaker,
+)
 from app.layer1_decloaker.image_decloaker import (
     ImageDeCloaker,
     image_decloaker,
@@ -33,5 +37,8 @@ __all__ = [
     "relative_luminance",
     "ImageDeCloaker",
     "image_decloaker",
+    "AudioVideoDeCloaker",
+    "audio_video_decloaker",
 ]
+
 

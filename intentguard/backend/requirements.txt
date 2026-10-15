@@ -26,6 +26,7 @@ pyzbar>=0.1.9
 numpy>=1.26.0
 qrcode>=8.0
 openai-whisper>=20231117
+moviepy>=2.0.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.2
 

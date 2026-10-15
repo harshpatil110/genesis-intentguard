@@ -29,6 +29,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.layer1_decloaker.audio_video_decloaker import (
+    AudioVideoDeCloaker,
+    audio_video_decloaker,
+)
 from app.layer1_decloaker.image_decloaker import (
     ImageDeCloaker,
     image_decloaker,
@@ -318,6 +322,11 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         or req.source_uri_or_filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"))
     )
 
+    is_media_modality = (
+        req.modality in (InputModality.AUDIO, InputModality.VIDEO, "audio", "video")
+        or req.source_uri_or_filename.lower().endswith((".mp3", ".wav", ".ogg", ".mp4", ".mov", ".m4a", ".webm"))
+    )
+
     if is_doc_modality and req.raw_content_base64:
         try:
             decoded_bytes = base64.b64decode(req.raw_content_base64)
@@ -378,6 +387,39 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
                 text_to_scan = decloak_res.visible_clean_text
         except Exception as exc:
             logger.warning("Error running Image de-cloaker: %s", exc)
+
+    elif is_media_modality and req.raw_content_base64:
+        try:
+            decoded_bytes = base64.b64decode(req.raw_content_base64)
+            # Check for disguised Windows executable header (MZ)
+            if decoded_bytes.startswith(_MZ_MAGIC):
+                threat_detected = True
+                if 2 not in risk_category_ids:
+                    risk_category_ids.append(2)
+                cloaked_threats.append({
+                    "pattern": "MZ_HEADER",
+                    "match": "Disguised Windows executable (MZ header) detected",
+                    "position": 0,
+                })
+            else:
+                mod_str = req.modality.value if hasattr(req.modality, "value") else str(req.modality)
+                decloak_res = audio_video_decloaker.decloak_media_bytes(
+                    file_bytes=decoded_bytes,
+                    modality=mod_str,
+                    filename=req.source_uri_or_filename,
+                    metadata=req.metadata,
+                )
+                raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                if decloak_res.threat_detected:
+                    threat_detected = True
+                    for r_id in decloak_res.risk_category_ids:
+                        if r_id not in risk_category_ids:
+                            risk_category_ids.append(r_id)
+                    for finding in decloak_res.cloaked_findings:
+                        cloaked_threats.append(finding.model_dump())
+                text_to_scan = decloak_res.visible_clean_text
+        except Exception as exc:
+            logger.warning("Error running Audio/Video de-cloaker: %s", exc)
 
     # Check for disguised Windows executable header (MZ) when modality is not PDF/DOCX/IMAGE
     elif req.raw_content_base64:
@@ -980,6 +1022,11 @@ async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCl
         (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")
     ):
         return image_decloaker.decloak_image_bytes(file_bytes=file_bytes, filename=req.filename)
+    elif req.modality in ("audio", "video") or req.filename.lower().endswith(
+        (".mp3", ".wav", ".ogg", ".mp4", ".mov", ".m4a", ".webm")
+    ):
+        mod_str = req.modality or ("video" if req.filename.lower().endswith((".mp4", ".mov", ".m4a", ".webm")) else "audio")
+        return audio_video_decloaker.decloak_media_bytes(file_bytes=file_bytes, modality=mod_str, filename=req.filename)
     return pdf_docx_decloaker.decloak_document(
         file_bytes=file_bytes,
         filename=req.filename,
