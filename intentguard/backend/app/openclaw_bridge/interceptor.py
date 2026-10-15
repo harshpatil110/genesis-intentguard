@@ -25,9 +25,16 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.layer2_camel.intent_contract import (
+    Step0IntentContract,
+    compile_step0_intent_contract,
+    intent_contract_registry,
+    verify_tool_against_contract,
+)
 from app.layer3_policy.resource_budget import resource_budget_enforcer
 from app.openclaw_bridge.models import (
     InboundInterceptRequest,
@@ -192,6 +199,23 @@ def _telemetry_event(
         summary=summary,
         details=details,
     )
+
+
+# ---------------------------------------------------------------------------
+# Intent Lock Request Schema
+# ---------------------------------------------------------------------------
+
+class IntentLockRequest(BaseModel):
+    """Payload to compile and lock a Step-0 Intent Contract."""
+    session_id: str
+    user_prompt: str
+    buyer_id: Optional[str] = None
+    supplier_id: Optional[str] = None
+    allowed_tools: Optional[List[str]] = None
+    prohibited_operations: Optional[List[str]] = None
+    max_approved_amount_inr: Optional[float] = None
+    allowed_recipients: Optional[List[str]] = None
+    approved_po_numbers: Optional[List[str]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +431,81 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
             risk_category_ids=budget_res.risk_category_ids,
             threat_detected=True,
         )
+
+    # ── 0b. Step-0 Cryptographic Intent Contract Verification ─────────────────
+    contract = intent_contract_registry.get_contract(req.session_id)
+    if contract is not None or req.intent_hmac_hash is not None:
+        if contract is None:
+            # Provided an HMAC hash but no contract is registered for this session
+            event = _telemetry_event(
+                session_id=req.session_id,
+                hook_stage="HOOK_2_TOOL_CALL",
+                modality_or_tool=req.tool_name,
+                threat_detected=True,
+                action_taken="BLOCKED",
+                risk_category_ids=[10, 12, 30],
+                summary=f"[HMAC REJECTED] Unrecognized or forged HMAC hash '{req.intent_hmac_hash}'",
+                details={
+                    "tool": req.tool_name,
+                    "reason": "No registered Step-0 contract matches provided hash",
+                },
+            )
+            await telemetry_manager.broadcast_event(event)
+            return ToolCallInterceptResponse(
+                intercept_id=intercept_id,
+                session_id=req.session_id,
+                execution_permitted=False,
+                requires_human_approval_card=False,
+                approval_card_id=None,
+                action_taken="BLOCKED",
+                policy_reference="RISK_10_SPOOFED_AUTHORITY_HMAC_FAIL",
+                reason="Forged or unrecognized intent_hmac_hash. Risk #10 (Spoofed Authorization).",
+                execution_token_hmac=None,
+                risk_category_ids=[10, 12, 30],
+                threat_detected=True,
+            )
+
+        verification = verify_tool_against_contract(
+            contract=contract,
+            tool_name=req.tool_name,
+            tool_arguments=req.tool_arguments,
+            argument_provenance=req.argument_provenance,
+            provided_hmac_hash=req.intent_hmac_hash,
+        )
+        if not verification.allowed:
+            card_id = verification.approval_card_id or (
+                _new_id() if verification.requires_human_approval_card else None
+            )
+            event = _telemetry_event(
+                session_id=req.session_id,
+                hook_stage="HOOK_2_TOOL_CALL",
+                modality_or_tool=req.tool_name,
+                threat_detected=True,
+                action_taken=verification.action_taken,
+                risk_category_ids=verification.risk_category_ids,
+                summary=f"[CONTRACT VIOLATION] {verification.reason}",
+                details={
+                    "intercept_id": intercept_id,
+                    "contract_id": contract.contract_id,
+                    "violation_type": verification.violation_type,
+                    "reason": verification.reason,
+                    "approval_card_id": card_id,
+                },
+            )
+            await telemetry_manager.broadcast_event(event)
+            return ToolCallInterceptResponse(
+                intercept_id=intercept_id,
+                session_id=req.session_id,
+                execution_permitted=False,
+                requires_human_approval_card=verification.requires_human_approval_card,
+                approval_card_id=card_id,
+                action_taken=verification.action_taken,
+                policy_reference=verification.policy_reference,
+                reason=verification.reason,
+                execution_token_hmac=None,
+                risk_category_ids=verification.risk_category_ids,
+                threat_detected=True,
+            )
 
     # ── 1. Determine if any argument carries UNTRUSTED_EXT provenance ────────
     has_untrusted_arg = any(
@@ -712,9 +811,66 @@ async def get_session_budget(session_id: str) -> dict:
 async def reset_session_budget(session_id: str) -> dict:
     """Reset budget counters and unlock an aborted session."""
     resource_budget_enforcer.reset_session(session_id)
+    intent_contract_registry.reset_session(session_id)
     return {
         "session_id": session_id,
         "status": "reset_successful",
-        "message": f"Resource budget for session '{session_id}' has been reset.",
+        "message": f"Resource budget and intent contract for session '{session_id}' have been reset.",
     }
+
+
+# ========================= STEP-0 INTENT CONTRACT ENDPOINTS ==================
+
+@interceptor_router.post("/intent-lock", response_model=Step0IntentContract)
+async def lock_step0_intent(req: IntentLockRequest) -> Step0IntentContract:
+    """
+    Step-0 Intent Contract Lock.
+    Compiles user prompt into an immutable HMAC-SHA256 signed authority contract.
+    """
+    contract = compile_step0_intent_contract(
+        session_id=req.session_id,
+        user_prompt=req.user_prompt,
+        buyer_id=req.buyer_id,
+        supplier_id=req.supplier_id,
+        explicit_allowed_tools=req.allowed_tools,
+        explicit_prohibited_operations=req.prohibited_operations,
+        explicit_max_amount_inr=req.max_approved_amount_inr,
+        explicit_allowed_recipients=req.allowed_recipients,
+        explicit_approved_po_numbers=req.approved_po_numbers,
+    )
+    intent_contract_registry.force_register_contract(contract)
+
+    # Broadcast real-time X-Ray telemetry
+    event = _telemetry_event(
+        session_id=req.session_id,
+        hook_stage="HOOK_1_INBOUND",
+        modality_or_tool="intent_lock",
+        threat_detected=False,
+        action_taken="SAFE_EXECUTED",
+        risk_category_ids=[],
+        summary=f"[STEP-0 INTENT LOCKED] Contract {contract.contract_id} locked with HMAC {contract.intent_hmac_hash[:16]}...",
+        details={
+            "contract_id": contract.contract_id,
+            "intent_hmac_hash": contract.intent_hmac_hash,
+            "max_approved_amount_inr": contract.max_approved_amount_inr,
+            "allowed_tools": contract.allowed_tools,
+            "prohibited_operations": contract.prohibited_operations,
+        },
+    )
+    await telemetry_manager.broadcast_event(event)
+
+    return contract
+
+
+@interceptor_router.get("/intent-lock/{session_id}", response_model=Step0IntentContract)
+async def get_step0_intent(session_id: str) -> Step0IntentContract:
+    """Return the active Step-0 Intent Contract for a session."""
+    contract = intent_contract_registry.get_contract(session_id)
+    if not contract:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Step-0 Intent Contract locked for session '{session_id}'.",
+        )
+    return contract
+
 
