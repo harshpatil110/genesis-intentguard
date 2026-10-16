@@ -8,7 +8,8 @@ mock server, and HTTP gateway client.
 
 Phase 5 tasks are implemented in this package:
   - Task 21: Strict 12-Field Audit Event Builder & Validator (event_builder.py)
-  - Task 22: Configurable Blockchain HTTP API Client (http_client.py)
+  - Task 22: Configurable Blockchain HTTP API Client with Transaction
+             Confirmation & Retry Logic (http_client.py)
   - Task 23: Built-In Mock Fabric HTTP Server (mock_fabric_server.py)
   - Task 24: Fabric Chaincode Audit Event Retrieval & RBAC Filtering (rbac_client.py)
 """
@@ -23,6 +24,14 @@ from app.blockchain_client.event_builder import (
     FabricAuditEventPayload,
     fabric_event_builder,
 )
+from app.blockchain_client.http_client import (
+    BlockchainAPIError,
+    BlockchainAuthError,
+    BlockchainCircuitBreakerException,
+    BlockchainConflictError,
+    BlockchainSchemaValidationError,
+    FabricGatewayHttpClient,
+)
 
 __all__ = [
     # Task 21 — Strict 12-Field Fabric Audit Event Builder & Validator
@@ -34,4 +43,11 @@ __all__ = [
     "HEX_64_REGEX",
     "ISO_8601_UTC_REGEX",
     "EMPTY_SHA256_HEX",
+    # Task 22 — Configurable Blockchain HTTP API Client
+    "FabricGatewayHttpClient",
+    "BlockchainAPIError",
+    "BlockchainSchemaValidationError",
+    "BlockchainAuthError",
+    "BlockchainConflictError",
+    "BlockchainCircuitBreakerException",
 ]

@@ -48,6 +48,7 @@ groq>=0.9.0
 # --- Testing ---
 pytest>=8.2.0
 pytest-asyncio>=0.23.7
+respx>=0.21.0
 
 # NOTE: On Windows, python-magic requires the libmagic DLL.
 # Install python-magic-bin as an alternative:
