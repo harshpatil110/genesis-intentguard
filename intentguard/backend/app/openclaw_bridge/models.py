@@ -105,6 +105,7 @@ class ToolCallInterceptResponse(BaseModel):
     execution_permitted:         bool
     requires_human_approval_card: bool = False
     approval_card_id:            Optional[str] = None
+    approval_card:               Optional[Dict[str, Any]] = None
     action_taken:                Literal["SAFE_EXECUTED", "BLOCKED", "HUMAN_APPROVAL_REQUIRED"]
     policy_reference:            str
     reason:                      str

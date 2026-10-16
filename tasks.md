@@ -586,7 +586,7 @@ Perform the following integration steps and verify end-to-end ledger commitment:
 * **Detailed Implementation Steps:**
 
 1. Require a short-lived cryptographic execution token (`HMAC` signed by Layer 3) on every tool execution request inside the OpenClaw sandbox; reject any direct tool call lacking a valid token (Risk #30).
-2. If the De-Cloaker, Policy Engine, or Blockchain API is unreachable (`HTTP 503`) when attempting a sensitive write/payment action, halt execution safely and refuse to fail open (Risk #33).
+2. If the De-Cloaker, Policy Engine, or Blockchain API is unreachable (`HTTP 503`) when attempting a sensitive write/payment action, halt execution safely and refuse to fail open (Risk #33)
 
 ---
 

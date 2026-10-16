@@ -655,6 +655,31 @@ class DeterministicPolicyGateway:
             if contract.allowed_tools:
                 allowed_set = {a.strip().lower() for a in contract.allowed_tools}
                 if norm_tool not in allowed_set:
+                    is_bank_mutation = norm_tool in BANK_MUTATION_TOOLS
+                    if is_bank_mutation:
+                        violation = IFCViolationDetail(
+                            arg_name=tool_name,
+                            sink_category="PROHIBITED_TOOL",
+                            actual_origin="BANK_MUTATION",
+                            required_origins=["HUMAN_APPROVAL_CARD"],
+                            risk_id=18,
+                            description=f"HIGH-RISK: Bank mutation tool '{tool_name}' requires human approval before execution.",
+                        )
+                        return PolicyEvaluationResult(
+                            session_id=session_id,
+                            tool_name=tool_name,
+                            execution_permitted=False,
+                            requires_human_approval_card=True,
+                            action_taken="HUMAN_APPROVAL_REQUIRED",
+                            policy_reference="RISK_18_BANK_MUTATION_HUMAN_APPROVAL",
+                            reason=f"HIGH-RISK: Bank mutation tool '{tool_name}' requires human approval before execution.",
+                            ifc_violations=[violation],
+                            risk_category_ids=[16, 18],
+                            threat_detected=True,
+                            execution_token_hmac=None,
+                            intent_hmac_hash=locked_hmac_hash,
+                        )
+
                     violation = IFCViolationDetail(
                         arg_name=tool_name,
                         sink_category="PROHIBITED_TOOL",

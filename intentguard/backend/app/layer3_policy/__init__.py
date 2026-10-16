@@ -58,6 +58,16 @@ from app.layer3_policy.outbound_firewall import (
     outbound_firewall,
 )
 
+from app.layer3_policy.step_back_approval import (
+    ApprovalResolutionRequest,
+    ApprovalResolutionResponse,
+    BlockchainAuditEventPayload,
+    PendingApprovalCard,
+    POBaselineComparison,
+    StepBackApprovalEngine,
+    step_back_approval_engine,
+)
+
 __all__ = [
     "BudgetCheckResult",
     "BudgetConfig",
@@ -102,6 +112,14 @@ __all__ = [
     "outbound_firewall",
     "DEFAULT_WHITELISTED_DOMAINS",
     "calculate_shannon_entropy",
+    # Task 20 — Step-Back Human-in-the-Loop Approval Card Engine
+    "StepBackApprovalEngine",
+    "step_back_approval_engine",
+    "PendingApprovalCard",
+    "POBaselineComparison",
+    "ApprovalResolutionRequest",
+    "ApprovalResolutionResponse",
+    "BlockchainAuditEventPayload",
 ]
 
 

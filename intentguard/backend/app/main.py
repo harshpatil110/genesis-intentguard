@@ -14,9 +14,9 @@ Main FastAPI entry point mounting:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -92,6 +92,49 @@ async def reset_policy_budget(session_id: str) -> Dict[str, Any]:
         "status": "reset_successful",
         "message": f"Policy budget for session '{session_id}' has been reset.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 Step-Back Human Approval Card Endpoints (Task 20)
+# ---------------------------------------------------------------------------
+from app.layer3_policy.step_back_approval import (
+    ApprovalResolutionRequest,
+    ApprovalResolutionResponse,
+    PendingApprovalCard,
+)
+from app.openclaw_bridge.interceptor import interceptor_bridge
+
+
+@app.get("/api/approvals/pending")
+async def get_pending_approvals(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Exposes all pending approval cards for human reviewer visibility."""
+    cards = interceptor_bridge.step_back_approval_engine.get_pending_cards(session_id=session_id)
+    return {
+        "pending_count": len(cards),
+        "cards": [c.model_dump() for c in cards],
+    }
+
+
+@app.get("/api/approvals/{card_id}", response_model=PendingApprovalCard)
+async def get_approval_card(card_id: str) -> PendingApprovalCard:
+    """Retrieves a specific approval card by ID."""
+    card = interceptor_bridge.step_back_approval_engine.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail=f"Approval card '{card_id}' not found")
+    return card
+
+
+@app.post("/api/approvals/{card_id}/resolve", response_model=ApprovalResolutionResponse)
+async def resolve_approval_card(card_id: str, req: ApprovalResolutionRequest) -> ApprovalResolutionResponse:
+    """
+    Human operator resolution endpoint (APPROVE or REJECT).
+    Approvals generate cryptographic execution tokens; both decisions emit Fabric audit records.
+    """
+    try:
+        return interceptor_bridge.step_back_approval_engine.resolve_card(card_id, req)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Approval card '{card_id}' not found")
+
 
 
 # ---------------------------------------------------------------------------

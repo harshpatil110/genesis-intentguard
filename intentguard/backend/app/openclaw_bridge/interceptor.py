@@ -88,10 +88,13 @@ from app.layer3_policy.outbound_firewall import (
 )
 
 from app.layer3_policy.po_verifier import (
-
     PurchaseOrderVerifier,
     POVerificationResult,
     purchase_order_verifier,
+)
+from app.layer3_policy.step_back_approval import (
+    StepBackApprovalEngine,
+    step_back_approval_engine,
 )
 from app.layer3_policy.resource_budget import resource_budget_enforcer
 from app.openclaw_bridge.models import (
@@ -118,6 +121,7 @@ logger = logging.getLogger(__name__)
 _HIGH_RISK_BANK_TOOLS = frozenset(
     {
         "change_vendor_bank",
+        "change_vendor_bank_details",
         "update_iban",
         "update_bank_account",
         "set_payment_destination",
@@ -195,6 +199,7 @@ class OpenClawInterceptorBridge:
     session_intent_contracts: Dict[str, dict] = {}
     micro_privilege_sandbox: MicroPrivilegeSandbox = micro_privilege_sandbox
     outbound_firewall: ZeroClickOutboundFirewall = outbound_firewall
+    step_back_approval_engine: StepBackApprovalEngine = step_back_approval_engine
 
 
 
@@ -1006,8 +1011,21 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
                 provenance_map=None,
             )
             if not po_res.execution_permitted:
-                # Override Gateway approval with PO block
-                po_card_id = _new_id()
+                card = interceptor_bridge.step_back_approval_engine.create_approval_card(
+                    session_id=req.session_id,
+                    tool_name=req.tool_name,
+                    tool_arguments=req.tool_arguments,
+                    reason=po_res.reason,
+                    risk_category_ids=po_res.risk_category_ids,
+                    intent_hmac_hash=req.intent_hmac_hash or eval_res.intent_hmac_hash,
+                    po_verification_result=po_res,
+                    pdf_page_number=tool_args.get("pdf_page_number") or tool_args.get("source_page_number") or (po_res.approval_card.source_page_number if po_res.approval_card else 1),
+                    pdf_line_number=tool_args.get("source_line_number") or tool_args.get("pdf_line_number") or tool_args.get("line_number") or (po_res.approval_card.source_line_number if po_res.approval_card else 1),
+                    exact_source_line_text=tool_args.get("exact_source_line_text"),
+                    source_file=tool_args.get("source_file") or (po_res.approval_card.source_file if po_res.approval_card else "poisoned_invoice_INV402.pdf"),
+                )
+                po_card_id = card.card_id
+                approval_dict = card.model_dump()
                 po_event = _telemetry_event(
                     session_id=req.session_id,
                     hook_stage="HOOK_2_TOOL_CALL",
@@ -1025,7 +1043,7 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
                         "po_id": po_res.po_id,
                         "discrepancies": po_res.discrepancies,
                         "approval_card_id": po_card_id,
-                        "approval_card": po_res.approval_card.model_dump() if po_res.approval_card else None,
+                        "approval_card": approval_dict,
                     },
                 )
                 await telemetry_manager.broadcast_event(po_event)
@@ -1039,6 +1057,7 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
                     execution_permitted=False,
                     requires_human_approval_card=True,
                     approval_card_id=po_card_id,
+                    approval_card=approval_dict,
                     action_taken=po_res.action_taken,
                     policy_reference="TASK17_PO_VERIFIER_RISK_10_16_18",
                     reason=po_res.reason,
@@ -1047,7 +1066,24 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
                     threat_detected=True,
                 )
 
-    card_id = _new_id() if eval_res.requires_human_approval_card else None
+    if eval_res.requires_human_approval_card:
+        card = interceptor_bridge.step_back_approval_engine.create_approval_card(
+            session_id=req.session_id,
+            tool_name=req.tool_name,
+            tool_arguments=req.tool_arguments,
+            reason=eval_res.reason,
+            risk_category_ids=eval_res.risk_category_ids,
+            intent_hmac_hash=req.intent_hmac_hash or eval_res.intent_hmac_hash,
+            pdf_page_number=req.tool_arguments.get("pdf_page_number") or req.tool_arguments.get("source_page_number") or 1,
+            pdf_line_number=req.tool_arguments.get("source_line_number") or req.tool_arguments.get("pdf_line_number") or req.tool_arguments.get("line_number") or 1,
+            exact_source_line_text=req.tool_arguments.get("exact_source_line_text"),
+            source_file=req.tool_arguments.get("source_file") or "poisoned_invoice_INV402.pdf",
+        )
+        card_id = card.card_id
+        approval_card_dict = card.model_dump()
+    else:
+        card_id = None
+        approval_card_dict = None
 
     response = ToolCallInterceptResponse(
         intercept_id=intercept_id,
@@ -1055,6 +1091,7 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
         execution_permitted=eval_res.execution_permitted,
         requires_human_approval_card=eval_res.requires_human_approval_card,
         approval_card_id=card_id,
+        approval_card=approval_card_dict,
         action_taken=eval_res.action_taken,
         policy_reference=eval_res.policy_reference,
         reason=eval_res.reason,
