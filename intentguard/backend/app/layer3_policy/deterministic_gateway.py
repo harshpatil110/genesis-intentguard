@@ -31,8 +31,10 @@ from app.layer2_camel.intent_contract import (
     verify_contract_signature,
 )
 from app.layer2_camel.provenance_wrapper import ProvenanceEnvelope, ProvenanceOrigin
+from app.layer3_policy.micro_privilege import MicroPrivilegeSandbox, micro_privilege_sandbox
 
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Constants & Risk Mappings
@@ -403,6 +405,8 @@ class DeterministicPolicyGateway:
 
     def __init__(self) -> None:
         self.ifc_engine = PydanticIFCRuleEngine()
+        self.micro_privilege_sandbox: MicroPrivilegeSandbox = micro_privilege_sandbox
+
 
     def evaluate_tool_call(self, request: PolicyEvaluationRequest) -> PolicyEvaluationResult:
         """
@@ -551,6 +555,33 @@ class DeterministicPolicyGateway:
                 execution_token_hmac=None,
                 intent_hmac_hash=locked_hmac_hash,
             )
+
+        # 2a-2. Task 18 Micro-Privilege Task Sandbox evaluation
+        sandbox_res = self.micro_privilege_sandbox.evaluate_tool_call(session_id=session_id, tool_name=tool_name)
+        if not sandbox_res.allowed and norm_tool not in BANK_MUTATION_TOOLS:
+            violation = IFCViolationDetail(
+                arg_name=tool_name,
+                sink_category="MICRO_PRIVILEGE_STRIPPED",
+                actual_origin="UNTRUSTED_EXT",
+                required_origins=["FULL_TRUSTED_CONTEXT"],
+                risk_id=17,
+                description=sandbox_res.reason,
+            )
+            return PolicyEvaluationResult(
+                session_id=session_id,
+                tool_name=tool_name,
+                execution_permitted=False,
+                requires_human_approval_card=False,
+                action_taken="BLOCKED",
+                policy_reference=f"RISK_17_MICRO_PRIVILEGE_{sandbox_res.violated_category or 'SANDBOX'}",
+                reason=sandbox_res.reason,
+                ifc_violations=[violation],
+                risk_category_ids=[16, 17],
+                threat_detected=True,
+                execution_token_hmac=None,
+                intent_hmac_hash=locked_hmac_hash,
+            )
+
 
         # 2b. Contract prohibited operations check
         if contract is not None:

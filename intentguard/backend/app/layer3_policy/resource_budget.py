@@ -265,9 +265,7 @@ class ResourceBudgetEnforcer:
 
         if "READ_ONLY_UNTRUSTED" in state.allowed_permissions:
             if norm_name in _DESTRUCTIVE_TOOLS:
-                state.is_locked_or_aborted = True
-                state.abort_violation_type = "EXCESSIVE_PERMISSION_DENIED"
-                state.abort_reason = (
+                abort_reason = (
                     f"Step-0 Micro-Privilege Blocked: Destructive tool '{tool_name}' "
                     "is denied when session contains untrusted external data. "
                     "Risk #17 (Excessive Permissions)."
@@ -278,9 +276,10 @@ class ResourceBudgetEnforcer:
                     violation_type="EXCESSIVE_PERMISSION_DENIED",
                     risk_category_ids=[16, 17],
                     policy_reference="RISK_17_EXCESSIVE_PERMISSIONS",
-                    reason=state.abort_reason,
+                    reason=abort_reason,
                     current_metrics=self.get_session_metrics(session_id),
                 )
+
 
         return BudgetCheckResult(
             allowed=True,
@@ -482,15 +481,17 @@ class ResourceBudgetEnforcer:
         state = self.get_or_create_session(session_id, now=now)
 
         if state.is_locked_or_aborted:
+            r_ids = [16, 17] if state.abort_violation_type == "EXCESSIVE_PERMISSION_DENIED" else [19]
             return BudgetCheckResult(
                 allowed=False,
                 action_taken="BLOCKED",
                 violation_type=state.abort_violation_type or "INFINITE_TOOL_LOOP_DETECTED",  # type: ignore[arg-type]
-                risk_category_ids=[19],
+                risk_category_ids=r_ids,
                 policy_reference="LAYER3_BUDGET_SESSION_ABORTED",
                 reason=state.abort_reason or "Session is locked/aborted due to prior budget violation.",
                 current_metrics=self.get_session_metrics(session_id, now=now),
             )
+
 
         timeout_check = self.check_execution_timeout(session_id, now=now)
         if not timeout_check.allowed:

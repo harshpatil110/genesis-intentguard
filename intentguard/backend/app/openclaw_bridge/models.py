@@ -74,6 +74,9 @@ class InboundInterceptResponse(BaseModel):
     risk_category_ids:      List[int] = Field(default_factory=list)
     threat_detected:        bool = False
     action_taken:           str = "SAFE_EXECUTED"
+    session_permission_mask: str = "RESTRICTED_UNTRUSTED_CONTEXT"
+    stripped_tools:         List[str] = Field(default_factory=list)
+
 
 
 # ---------------------------------------------------------------------------

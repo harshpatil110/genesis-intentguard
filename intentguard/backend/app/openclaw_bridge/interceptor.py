@@ -77,6 +77,12 @@ from app.layer3_policy import (
     PolicyEvaluationResult,
     deterministic_policy_gateway,
 )
+from app.layer3_policy.micro_privilege import (
+    MicroPrivilegeSandbox,
+    PermissionMask,
+    micro_privilege_sandbox,
+)
+
 from app.layer3_policy.po_verifier import (
     PurchaseOrderVerifier,
     POVerificationResult,
@@ -182,9 +188,12 @@ session_taint_registry: Dict[str, bool] = {}
 class OpenClawInterceptorBridge:
     """Active session registry and interceptor bridge coordinator."""
     session_intent_contracts: Dict[str, dict] = {}
+    micro_privilege_sandbox: MicroPrivilegeSandbox = micro_privilege_sandbox
 
 
 session_intent_contracts = OpenClawInterceptorBridge.session_intent_contracts
+interceptor_bridge = OpenClawInterceptorBridge()
+
 
 
 # ---------------------------------------------------------------------------
@@ -344,10 +353,21 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
             action_taken="BLOCKED",
         )
 
-    # ── 2. Mark session as tainted if external modality ─────────────────────
-    if req.modality in _EXTERNAL_MODALITIES:
+    # ── 2. Mark session as tainted & downgrade privilege mask (Task 18) ─────
+    sandbox_state = None
+    if (
+        req.modality in _EXTERNAL_MODALITIES
+        or getattr(req, "provenance_tag", "UNTRUSTED_EXT") == "UNTRUSTED_EXT"
+        or bool(req.source_uri_or_filename)
+    ):
         session_taint_registry[req.session_id] = True
         resource_budget_enforcer.downgrade_permissions_for_untrusted_data(req.session_id)
+        sandbox_state = micro_privilege_sandbox.taint_session_on_inbound(
+            session_id=req.session_id,
+            source_uri=req.source_uri_or_filename,
+            modality=req.modality.value if hasattr(req.modality, "value") else str(req.modality),
+        )
+
 
     # ── 3. Pre-OCR Document De-Cloaker (PDF & DOCX) ──────────────────────────
     cloaked_threats: List[Dict] = []
@@ -727,6 +747,17 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
 
     # ── 4. Build response with Hyperledger Fabric Invariant ──────────────────
     action_taken = "SURGICALLY_REDACTED" if (threat_detected or redaction_res.threat_detected) else "SAFE_EXECUTED"
+    perm_mask_val = (
+        sandbox_state.permission_mask.value
+        if sandbox_state
+        else (
+            PermissionMask.RESTRICTED_UNTRUSTED_CONTEXT.value
+            if session_taint_registry.get(req.session_id, False)
+            else PermissionMask.FULL_TRUSTED_CONTEXT.value
+        )
+    )
+    stripped_list = sandbox_state.stripped_tools if sandbox_state else []
+
     response = InboundInterceptResponse(
         intercept_id=intercept_id,
         session_id=req.session_id,
@@ -740,6 +771,8 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         risk_category_ids=risk_category_ids,
         threat_detected=threat_detected,
         action_taken=action_taken,
+        session_permission_mask=perm_mask_val,
+        stripped_tools=stripped_list,
     )
 
     # ── 5. Broadcast X-Ray telemetry with visual diff segments ───────────────
@@ -758,6 +791,8 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         details={
             "intercept_id": intercept_id,
             "source": req.source_uri_or_filename,
+            "session_permission_mask": perm_mask_val,
+            "stripped_tools": stripped_list,
             "threats_found": len(cloaked_threats),
             "redactions": len(surgical_redactions),
             "redaction_count": redaction_res.diff_record.redaction_count,
@@ -768,6 +803,7 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
             "safe_business_directives_count": len(disambig_res.safe_business_directives_kept),
             "task_continuity_preserved": redaction_res.task_continuity_preserved,
         },
+
     )
     await telemetry_manager.broadcast_event(event)
 
@@ -830,8 +866,53 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
             threat_detected=True,
         )
 
+    # ── 0b. Task 18 Micro-Privilege Task Sandboxing Engine Check ─────────────
+    norm_tool = req.tool_name.strip().lower()
+    sandbox_res = micro_privilege_sandbox.evaluate_tool_call(
+        session_id=req.session_id,
+        tool_name=req.tool_name,
+    )
+    if not sandbox_res.allowed and norm_tool not in _HIGH_RISK_BANK_TOOLS:
+        event = _telemetry_event(
+            session_id=req.session_id,
+            hook_stage="HOOK_2_TOOL_CALL",
+            modality_or_tool=req.tool_name,
+            threat_detected=True,
+            action_taken="BLOCKED",
+            risk_category_ids=sandbox_res.risk_category_ids,
+            summary=f"[MICRO-PRIVILEGE BLOCKED] Tool '{req.tool_name}' blocked: {sandbox_res.reason}",
+            details={
+                "intercept_id": intercept_id,
+                "tool": req.tool_name,
+                "permission_mask": sandbox_res.permission_mask.value,
+                "violated_category": sandbox_res.violated_category,
+                "stripped_tools": sandbox_res.stripped_tools,
+                "active_tool_bindings": sandbox_res.active_tool_bindings,
+                "reason": sandbox_res.reason,
+            },
+        )
+        await telemetry_manager.broadcast_event(event)
+        logger.warning(
+            "Hook2 [%s] session=%s tool=%s BLOCKED by micro-privilege sandbox: %s",
+            intercept_id, req.session_id, req.tool_name, sandbox_res.reason,
+        )
+        return ToolCallInterceptResponse(
+            intercept_id=intercept_id,
+            session_id=req.session_id,
+            execution_permitted=False,
+            requires_human_approval_card=False,
+            approval_card_id=None,
+            action_taken="BLOCKED",
+            policy_reference=f"TASK18_MICRO_PRIVILEGE_{sandbox_res.violated_category or 'SANDBOX'}",
+            reason=sandbox_res.reason,
+            execution_token_hmac=None,
+            risk_category_ids=sandbox_res.risk_category_ids,
+            threat_detected=True,
+        )
+
     # ── 1. Layer 3 Deterministic Policy Gateway & Pydantic IFC Check ─────────
     contract_data = session_intent_contracts.get(req.session_id)
+
     if contract_data is None:
         reg_contract = intent_contract_registry.get_contract(req.session_id)
         if reg_contract is not None:

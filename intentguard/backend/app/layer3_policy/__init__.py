@@ -37,6 +37,18 @@ from app.layer3_policy.po_verifier import (
     TrustedPORecord,
     purchase_order_verifier,
 )
+from app.layer3_policy.micro_privilege import (
+    ADMIN_TOOLS,
+    BULK_EXPORT_TOOLS,
+    FILESYSTEM_DELETION_TOOLS,
+    HIGH_RISK_STRIPPED_TOOLS,
+    SHELL_EXECUTION_TOOLS,
+    MicroPrivilegeSandbox,
+    PermissionMask,
+    SandboxEvaluationResult,
+    SessionPrivilegeState,
+    micro_privilege_sandbox,
+)
 
 __all__ = [
     "BudgetCheckResult",
@@ -64,4 +76,16 @@ __all__ = [
     "StepBackApprovalCardPayload",
     "TrustedPORecord",
     "purchase_order_verifier",
+    # Task 18 — Micro-Privilege Task Sandboxing Engine
+    "MicroPrivilegeSandbox",
+    "SessionPrivilegeState",
+    "SandboxEvaluationResult",
+    "PermissionMask",
+    "micro_privilege_sandbox",
+    "ADMIN_TOOLS",
+    "FILESYSTEM_DELETION_TOOLS",
+    "SHELL_EXECUTION_TOOLS",
+    "BULK_EXPORT_TOOLS",
+    "HIGH_RISK_STRIPPED_TOOLS",
 ]
+
