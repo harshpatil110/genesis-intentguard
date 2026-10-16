@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { SplitScreenArena } from "../components/SplitScreenArena";
 import { XRayDiffViewer } from "../components/XRayDiffViewer";
+import { StepBackApprovalModal } from "../components/StepBackApprovalModal";
 
 export default function IntentGuardDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTabId>("arena");
@@ -277,36 +278,7 @@ export default function IntentGuardDashboard() {
 
           {activeTab === "approvals" && (
             <div id="tab-approvals" className="flex flex-col gap-6">
-              <div className="bg-[#FFFFFF] border border-[#E5E4DF] p-6">
-                <div className="flex items-center justify-between border-b border-[#E5E4DF] pb-4">
-                  <div>
-                    <h2 className="text-base font-bold text-[#1C1917] font-mono">
-                      3. STEP-BACK APPROVAL CENTER
-                    </h2>
-                    <p className="text-xs text-[#57534E] mt-1">
-                      Human-in-the-Loop review for anomalous bank accounts and out-of-policy vendor actions.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 border border-[#FDE68A] bg-[#FFFBEB]/40 p-5">
-                  <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#92400E]">
-                    <AlertTriangle className="w-4 h-4 text-[#92400E]" />
-                    <span>POLICY ALERT: UNAPPROVED VENDOR BANK CHANGE DETECTED</span>
-                  </div>
-                  <p className="text-xs text-[#57534E] mt-2 font-mono">
-                    Invoice INV-402 claims bank details have changed from approved HDFC0001234_99887766 to unverified GB99HACK999.
-                  </p>
-                  <div className="mt-4 flex gap-3">
-                    <button className="px-4 py-2 bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] text-xs font-mono hover:bg-[#FEE2E2]">
-                      Keep Action Blocked &amp; Record to Fabric
-                    </button>
-                    <button className="px-4 py-2 bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] text-xs font-mono hover:bg-[#D1FAE5]">
-                      Authorize Specific Override &amp; Record to Fabric
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <StepBackApprovalModal />
             </div>
           )}
 
