@@ -9,9 +9,17 @@ from app.layer4_sandbox.sandbox_controller import (
     SandboxStateSnapshot,
     sandbox_controller,
 )
+from app.layer4_sandbox.goal_state_verifier import (
+    DeterministicGoalVerifier,
+    GoalStateVerificationResult,
+    goal_state_verifier,
+)
 
 __all__ = [
     "SandboxExecutionController",
     "SandboxStateSnapshot",
     "sandbox_controller",
+    "DeterministicGoalVerifier",
+    "GoalStateVerificationResult",
+    "goal_state_verifier",
 ]
