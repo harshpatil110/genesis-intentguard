@@ -99,14 +99,24 @@ async def grpc_error_handler(request: Request, exc: Any) -> JSONResponse:
     )
 
 
+from fastapi.encoders import jsonable_encoder
+
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """Translate Pydantic schema validation errors into HTTP 400 Bad Request instead of 422."""
+    safe_errors = []
+    try:
+        safe_errors = jsonable_encoder(exc.errors())
+    except Exception:
+        for err in exc.errors():
+            safe_err = {k: v for k, v in err.items() if k != "ctx"}
+            safe_errors.append(safe_err)
+
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
             "error": "Schema Validation Error",
             "detail": "Incoming payload failed schema or chaincode validation rules.",
-            "details": exc.errors(),
+            "details": safe_errors,
         },
     )
 
