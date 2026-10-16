@@ -601,7 +601,7 @@ Perform the following integration steps and verify end-to-end ledger commitment:
 
 ---
 
-### Task 31: Deterministic Goal-State Verifier (Risk #32)
+### Task 31: Deterministic Goal-State Verifier (Risk #3
 
 * **Files:** `./intentguard/backend/app/layer4_sandbox/goal_state_verifier.py`
 * **Objective:** Run a **Deterministic Goal-State Check** after every task to confirm zero unauthorized state changes occurred and that the legitimate user task completed (Risk #32).
