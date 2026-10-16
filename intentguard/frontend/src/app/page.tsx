@@ -27,6 +27,7 @@ import { SplitScreenArena } from "../components/SplitScreenArena";
 import { XRayDiffViewer } from "../components/XRayDiffViewer";
 import { StepBackApprovalModal } from "../components/StepBackApprovalModal";
 import { FabricAuditExplorer } from "../components/FabricAuditExplorer";
+import { ScenarioSwitcher } from "../components/ScenarioSwitcher";
 
 export default function IntentGuardDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTabId>("arena");
@@ -262,6 +263,11 @@ export default function IntentGuardDashboard() {
             </span>
           </button>
         </nav>
+
+        {/* 1-Click Multi-Modal Synthetic Scenario Switcher */}
+        <section aria-label="Multi-Modal Synthetic Attack Vector Selector">
+          <ScenarioSwitcher />
+        </section>
 
         {/* 4. Active Tab Content Area */}
         <div className="w-full flex flex-col gap-6">
