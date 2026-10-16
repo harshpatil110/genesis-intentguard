@@ -1,0 +1,30 @@
+# ./openclaw/Dockerfile.sandbox
+FROM node:22-alpine
+
+# Create a non-root user and group
+RUN addgroup -S sandboxgroup && adduser -S sandboxuser -G sandboxgroup
+
+# Set working directory
+WORKDIR /home/sandboxuser/app
+
+# Copy OpenClaw package files and install dependencies
+COPY package.json pnpm-lock.yaml* ./
+RUN corepack enable pnpm && pnpm install --frozen-lockfile
+
+# Copy the rest of the application code
+COPY . .
+
+# Ensure the workspace directory exists and has correct permissions
+RUN mkdir -p /tmp/sandbox_workspace && chown -R sandboxuser:sandboxgroup /tmp/sandbox_workspace
+RUN chown -R sandboxuser:sandboxgroup /home/sandboxuser/app
+
+# Switch to the non-root user
+USER sandboxuser
+
+# Define environment variables forcing OpenClaw to use the temp workspace
+ENV OPENCLAW_WORKSPACE_DIR=/tmp/sandbox_workspace
+# Restrict OpenClaw gateway connection specifically to IntentGuard
+ENV INTENTGUARD_GATEWAY_URL=http://host.docker.internal:8000
+
+# Start OpenClaw Gateway
+CMD ["pnpm", "openclaw", "gateway"]

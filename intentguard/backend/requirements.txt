@@ -41,6 +41,9 @@ python-magic-bin>=0.4.14; sys_platform == 'win32'
 # --- Data Processing ---
 openpyxl>=3.1.4
 
+# --- Layer 4: Sandbox & Container Execution ---
+docker>=7.0.0
+
 # --- Layer 2: LLM Clients (P-LLM & Q-LLM) ---
 openai>=1.35.0
 groq>=0.9.0
