@@ -88,6 +88,7 @@ Thumbs.db
 .agents/scratch/
 scratch/
 *.tmp
+task_prompt*.md
 
 # Blockchain & Crypto artifacts
 *.wallet/
