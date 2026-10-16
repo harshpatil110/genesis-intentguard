@@ -26,6 +26,7 @@ import {
 import { SplitScreenArena } from "../components/SplitScreenArena";
 import { XRayDiffViewer } from "../components/XRayDiffViewer";
 import { StepBackApprovalModal } from "../components/StepBackApprovalModal";
+import { FabricAuditExplorer } from "../components/FabricAuditExplorer";
 
 export default function IntentGuardDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTabId>("arena");
@@ -284,45 +285,7 @@ export default function IntentGuardDashboard() {
 
           {activeTab === "fabric" && (
             <div id="tab-fabric" className="flex flex-col gap-6">
-              <div className="bg-[#FFFFFF] border border-[#E5E4DF] p-6">
-                <div className="flex items-center justify-between border-b border-[#E5E4DF] pb-4">
-                  <div>
-                    <h2 className="text-base font-bold text-[#1C1917] font-mono">
-                      4. HYPERLEDGER FABRIC AUDIT EXPLORER (BUYER / SUPPLIER / AUDITOR)
-                    </h2>
-                    <p className="text-xs text-[#57534E] mt-1">
-                      Role-Based Access Control and 12-field immutable audit trail on channel &apos;intentguard&apos;.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 overflow-x-auto">
-                  <table className="w-full text-left text-xs font-mono border border-[#E5E4DF]">
-                    <thead className="bg-[#FAF9F6] border-b border-[#E5E4DF] text-[#78716C] uppercase text-[10px]">
-                      <tr>
-                        <th className="p-3">Event ID</th>
-                        <th className="p-3">Modality</th>
-                        <th className="p-3">Action Taken</th>
-                        <th className="p-3">Policy Ref</th>
-                        <th className="p-3">Threat</th>
-                        <th className="p-3">Fabric TX ID</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E5E4DF] text-[#1C1917]">
-                      <tr>
-                        <td className="p-3">evt-audit-402a</td>
-                        <td className="p-3">pdf</td>
-                        <td className="p-3 text-[#92400E]">SURGICALLY_REDACTED</td>
-                        <td className="p-3">RULE-L2-SURGICAL</td>
-                        <td className="p-3 text-[#991B1B]">TRUE</td>
-                        <td className="p-3 font-mono text-[11px] text-[#57534E]">
-                          fab-tx-89b1c2d3e4f5
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <FabricAuditExplorer />
             </div>
           )}
         </div>
