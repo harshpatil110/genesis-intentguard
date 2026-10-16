@@ -97,6 +97,10 @@ from app.layer3_policy.step_back_approval import (
     step_back_approval_engine,
 )
 from app.layer3_policy.resource_budget import resource_budget_enforcer
+from app.blockchain_client.audit_dispatcher import (
+    AuditDispatcher,
+    audit_dispatcher,
+)
 from app.openclaw_bridge.models import (
     InboundInterceptRequest,
     InboundInterceptResponse,
@@ -200,6 +204,7 @@ class OpenClawInterceptorBridge:
     micro_privilege_sandbox: MicroPrivilegeSandbox = micro_privilege_sandbox
     outbound_firewall: ZeroClickOutboundFirewall = outbound_firewall
     step_back_approval_engine: StepBackApprovalEngine = step_back_approval_engine
+    audit_dispatcher: AuditDispatcher = audit_dispatcher
 
 
 
@@ -819,6 +824,29 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
     )
     await telemetry_manager.broadcast_event(event)
 
+    # Task 24: End-to-End Hook Wiring into Hyperledger Fabric Audit Event Pipeline
+    try:
+        dispatcher = getattr(interceptor_bridge, "audit_dispatcher", audit_dispatcher)
+        await dispatcher.dispatch_audit_event(
+            session_id=req.session_id,
+            buyer_id=req.metadata.get("buyer_id") or getattr(settings, "DEFAULT_BUYER_ID", "buyer-01"),
+            supplier_id=req.metadata.get("supplier_id") or getattr(settings, "DEFAULT_SUPPLIER_ID", "supplier-01"),
+            input_modality=req.modality.value if hasattr(req.modality, "value") else str(req.modality),
+            action_taken=action_taken,
+            threat_detected=threat_detected,
+            raw_evidence_sha256=raw_evidence_sha256,
+            redacted_diff_sha256=redacted_diff_sha256,
+            risk_category_ids=risk_category_ids,
+            policy_reference="HOOK1_INBOUND_DE_CLOAK",
+            metadata={
+                "source": req.source_uri_or_filename,
+                "hook_stage": "HOOK_1_INBOUND",
+            },
+            broadcast_telemetry=False,
+        )
+    except Exception as exc:
+        logger.warning("Hook 1 audit dispatch failed: %s", exc)
+
     logger.info(
         "Hook1 [%s] session=%s modality=%s threat=%s action=%s",
         intercept_id, req.session_id, req.modality.value, threat_detected, action_taken,
@@ -1126,6 +1154,28 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
     )
     await telemetry_manager.broadcast_event(event)
 
+    # Task 24: End-to-End Hook Wiring into Hyperledger Fabric Audit Event Pipeline
+    try:
+        dispatcher = getattr(interceptor_bridge, "audit_dispatcher", audit_dispatcher)
+        await dispatcher.dispatch_audit_event(
+            session_id=req.session_id,
+            buyer_id=req.tool_arguments.get("buyer_id") or getattr(settings, "DEFAULT_BUYER_ID", "buyer-01"),
+            supplier_id=req.tool_arguments.get("supplier_id") or getattr(settings, "DEFAULT_SUPPLIER_ID", "supplier-01"),
+            input_modality="tool_call",
+            action_taken=eval_res.action_taken,
+            threat_detected=eval_res.threat_detected,
+            intent_hmac_hash=eval_res.intent_hmac_hash or req.intent_hmac_hash,
+            risk_category_ids=eval_res.risk_category_ids,
+            policy_reference=eval_res.policy_reference,
+            metadata={
+                "tool_name": req.tool_name,
+                "hook_stage": "HOOK_2_TOOL_CALL",
+            },
+            broadcast_telemetry=False,
+        )
+    except Exception as exc:
+        logger.warning("Hook 2 audit dispatch failed: %s", exc)
+
     logger.info(
         "Hook2 [%s] session=%s tool=%s permitted=%s action=%s",
         intercept_id, req.session_id, req.tool_name, eval_res.execution_permitted, eval_res.action_taken,
@@ -1182,6 +1232,27 @@ async def intercept_memory_write(req: MemoryWriteInterceptRequest) -> MemoryWrit
         },
     )
     await telemetry_manager.broadcast_event(event)
+
+    # Task 24: End-to-End Hook Wiring into Hyperledger Fabric Audit Event Pipeline
+    try:
+        dispatcher = getattr(interceptor_bridge, "audit_dispatcher", audit_dispatcher)
+        await dispatcher.dispatch_audit_event(
+            session_id=req.session_id,
+            buyer_id=getattr(settings, "DEFAULT_BUYER_ID", "buyer-01"),
+            supplier_id=getattr(settings, "DEFAULT_SUPPLIER_ID", "supplier-01"),
+            input_modality="memory_write",
+            action_taken=response.action_taken,
+            threat_detected=response.threat_detected,
+            risk_category_ids=response.risk_category_ids,
+            policy_reference="HOOK3_MEMORY_QUARANTINE_POLICY",
+            metadata={
+                "target_memory_file": req.target_memory_file,
+                "hook_stage": "HOOK_3_MEMORY_WRITE",
+            },
+            broadcast_telemetry=False,
+        )
+    except Exception as exc:
+        logger.warning("Hook 3 audit dispatch failed: %s", exc)
 
     logger.info(
         "Hook3 [%s] session=%s allowed=%s action=%s",
@@ -1250,6 +1321,27 @@ async def intercept_outbound_output(req: OutboundOutputInterceptRequest) -> Outb
         },
     )
     await telemetry_manager.broadcast_event(event)
+
+    # Task 24: End-to-End Hook Wiring into Hyperledger Fabric Audit Event Pipeline
+    try:
+        dispatcher = getattr(interceptor_bridge, "audit_dispatcher", audit_dispatcher)
+        await dispatcher.dispatch_audit_event(
+            session_id=req.session_id,
+            buyer_id=getattr(settings, "DEFAULT_BUYER_ID", "buyer-01"),
+            supplier_id=getattr(settings, "DEFAULT_SUPPLIER_ID", "supplier-01"),
+            input_modality="outbound_output",
+            action_taken=action_taken,
+            threat_detected=fw_res.threat_detected,
+            risk_category_ids=response.risk_category_ids,
+            policy_reference="HOOK4_OUTBOUND_FIREWALL",
+            metadata={
+                "blocked_urls_count": len(fw_res.exfiltration_links_removed),
+                "hook_stage": "HOOK_4_OUTBOUND",
+            },
+            broadcast_telemetry=False,
+        )
+    except Exception as exc:
+        logger.warning("Hook 4 audit dispatch failed: %s", exc)
 
     logger.info(
         "Hook4 [%s] session=%s threat=%s action=%s blocked_urls=%d",

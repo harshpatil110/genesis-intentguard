@@ -135,9 +135,10 @@ class StepBackApprovalEngine:
     audit entries to Hyperledger Fabric.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, dispatcher: Optional[Any] = None) -> None:
         self._cards: Dict[str, PendingApprovalCard] = {}
         self._audit_history: List[BlockchainAuditEventPayload] = []
+        self.dispatcher = dispatcher
 
     def create_approval_card(
         self,
@@ -351,7 +352,7 @@ class StepBackApprovalEngine:
 
         return True, tx_id
 
-    def resolve_card(self, card_id: str, req: ApprovalResolutionRequest) -> ApprovalResolutionResponse:
+    async def resolve_card(self, card_id: str, req: ApprovalResolutionRequest) -> ApprovalResolutionResponse:
         """
         Resolves a pending card with APPROVE or REJECT decision.
         If APPROVED, generates a cryptographic execution token HMAC.
@@ -403,7 +404,46 @@ class StepBackApprovalEngine:
             reviewer_id=req.reviewer_id,
         )
 
-        submitted, tx_id = self._submit_to_hyperledger_fabric(audit_event)
+        # Dispatch audit event via Task 24 AuditDispatcher
+        from app.blockchain_client.audit_dispatcher import audit_dispatcher
+
+        disp = getattr(self, "dispatcher", None) or audit_dispatcher
+        submitted = True
+        tx_id = hashlib.sha256(audit_event.model_dump_json().encode("utf-8")).hexdigest()
+
+        try:
+            dispatch_res = await disp.dispatch_audit_event(
+                session_id=card.session_id,
+                buyer_id=card.buyer_id,
+                supplier_id=card.supplier_id,
+                input_modality="human_approval",
+                action_taken=audit_action,
+                threat_detected=(req.decision == "REJECT"),
+                raw_evidence_sha256=audit_event.raw_evidence_sha256,
+                redacted_diff_sha256=audit_event.redacted_diff_sha256,
+                intent_hmac_hash=audit_event.intent_hmac_hash,
+                risk_category_ids=card.risk_category_ids,
+                policy_reference=f"STEP_BACK_APPROVAL_{req.decision}",
+                metadata={
+                    "card_id": card.card_id,
+                    "decision": req.decision,
+                    "reviewer_id": req.reviewer_id,
+                    "hook_stage": "STEP_BACK_HUMAN_APPROVAL",
+                },
+            )
+            raw_tx = dispatch_res.get("transaction_id") or tx_id
+            if raw_tx.startswith("mock-fabric-tx-"):
+                tx_id = raw_tx[len("mock-fabric-tx-"):]
+            elif len(raw_tx) == 64:
+                tx_id = raw_tx
+            else:
+                tx_id = hashlib.sha256(raw_tx.encode("utf-8")).hexdigest()
+            submitted = dispatch_res.get("recorded", True)
+        except Exception as exc:
+            logger.warning("[StepBackApproval] AuditDispatcher error (fallback): %s", exc)
+            submitted, tx_id = self._submit_to_hyperledger_fabric(audit_event)
+
+        self._audit_history.append(audit_event)
         card.blockchain_audit_tx_id = tx_id
 
         logger.info(

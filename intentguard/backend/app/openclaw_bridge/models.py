@@ -194,6 +194,8 @@ class XRayTelemetryEvent(BaseModel):
                              "HOOK_2_TOOL_CALL",
                              "HOOK_3_MEMORY_WRITE",
                              "HOOK_4_OUTBOUND",
+                             "BLOCKCHAIN_AUDIT",
+                             "STEP_BACK_HUMAN_APPROVAL",
                          ]
     modality_or_tool:    str
     threat_detected:     bool

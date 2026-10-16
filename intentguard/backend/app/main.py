@@ -140,7 +140,10 @@ async def resolve_approval_card(card_id: str, req: ApprovalResolutionRequest) ->
     Approvals generate cryptographic execution tokens; both decisions emit Fabric audit records.
     """
     try:
-        return interceptor_bridge.step_back_approval_engine.resolve_card(card_id, req)
+        res = interceptor_bridge.step_back_approval_engine.resolve_card(card_id, req)
+        if hasattr(res, "__await__"):
+            return await res
+        return res
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Approval card '{card_id}' not found")
 

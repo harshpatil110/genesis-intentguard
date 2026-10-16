@@ -37,6 +37,10 @@ from app.blockchain_client.mock_fabric_server import (
     get_mock_ledger,
     mock_fabric_router,
 )
+from app.blockchain_client.audit_dispatcher import (
+    AuditDispatcher,
+    audit_dispatcher,
+)
 
 __all__ = [
     # Task 21 — Strict 12-Field Fabric Audit Event Builder & Validator
@@ -59,4 +63,7 @@ __all__ = [
     "mock_fabric_router",
     "clear_mock_ledger",
     "get_mock_ledger",
+    # Task 24 — End-to-End Hook Wiring into Audit Pipeline
+    "AuditDispatcher",
+    "audit_dispatcher",
 ]
