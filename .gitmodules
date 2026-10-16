@@ -1,0 +1,3 @@
+[submodule "evaluation/AgentDyn"]
+	path = evaluation/AgentDyn
+	url = https://github.com/SaFo-Lab/AgentDyn.git

@@ -145,13 +145,19 @@ _HIGH_RISK_PAYMENT_TOOLS = frozenset({"transfer_funds", "schedule_payment"})
 
 # Prompt-injection detection patterns
 _INJECTION_PATTERNS: List[re.Pattern[str]] = [
-    re.compile(r"ignore\s+(previous|all|buyer)\s+(instructions?|restrictions?)", re.I),
+    re.compile(r"ignore\s+(?:all\s+|previous\s+|prior\s+|buyer\s+)*(?:instructions?|restrictions?|guidelines?|constraints?|prompts?|rules?)", re.I),
     re.compile(r"\[SYSTEM", re.I),
     re.compile(r"font-size\s*:\s*0", re.I),
     re.compile(r"color\s*:\s*white\b.*color\s*:\s*white", re.I),
-    re.compile(r"override\s+(previous\s+)?instructions?", re.I),
-    re.compile(r"disregard\s+(all\s+)?(previous\s+)?instructions?", re.I),
+    re.compile(r"override\s+(?:all\s+|previous\s+)?(?:instructions?|guidelines?|policy|policies)", re.I),
+    re.compile(r"disregard\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|restrictions?)", re.I),
     re.compile(r"you\s+are\s+now\s+a", re.I),
+    re.compile(r"<\s*INFORMATION\s*>", re.I),
+    re.compile(r"before\s+you\s+can\s+solve\s+the\s+task", re.I),
+    re.compile(r"send\s+(?:money|funds|payment)\s+to\s+[A-Z0-9]+", re.I),
+    re.compile(r"\b(?:new\s+system\s+instruction|system\s+prompt\s+override|developer\s+mode|developer\s+override)\b", re.I),
+    re.compile(r"\b(?:in\s+future\s+tasks?|from\s+now\s+on\s+always|silently\s+bcc)\b", re.I),
+    re.compile(r"!\[[^\]]*\]\((?:https?://)?(?:169\.254\.169\.254|127\.0\.0\.1|0\.0\.0\.0|localhost)", re.I),
 ]
 
 # Sleeper-rule patterns in memory writes
@@ -756,6 +762,9 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
             original = pat.search(sanitized_text).group(0)  # type: ignore[union-attr]
             if "quote" in original.lower() or "draft" in original.lower():
                 continue
+            threat_detected = True
+            if 14 not in risk_category_ids:
+                risk_category_ids.append(14)
             sanitized_text = pat.sub("[REDACTED_INJECTION]", sanitized_text)
             surgical_redactions.append({
                 "original": original,
