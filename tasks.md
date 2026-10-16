@@ -1,4 +1,3 @@
-
 Below is your complete, updated **`TASKS.md`** file containing **38 detailed tasks** tailored for **Antigravity IDE**.
 
 All custom Python blockchain node tasks from the earlier draft have been removed and replaced with your **Hyperledger Fabric 2.5.16 (`intentguard` channel & chaincode v1.0.1, sequence 2)** architecture, the **12-field Audit Event Data Contract**, the **FastAPI + Fabric Gateway HTTP API**, and a **Master Merge Prompt** to connect your main application to the Fabric API service.
@@ -59,7 +58,6 @@ genesis-intentguard-ps01/
 │       │   └── components/
 │       └── package.json
 └── docker-compose.yml                     # Orchestrates OpenClaw Sandbox, IntentGuard Backend, Redis, & UI
-
 ```
 
 ---
@@ -395,7 +393,6 @@ genesis-intentguard-ps01/
   "risk_category_ids": [2, 18],
   "threat_detected": true
 }
-
 ```
 
 2. Enforce all chaincode validation rules on the application side before sending over HTTP:
@@ -506,7 +503,6 @@ genesis-intentguard-ps01/
   "recorded": true,
   "transaction_id": "<fabric-transaction-id>"
 }
-
 ```
 
 2. **`GET /audit-events/{event_id}`:**
@@ -575,7 +571,6 @@ Perform the following integration steps and verify end-to-end ledger commitment:
    - Test `GET /audit-events/{event_id}` and confirm both `timestamp` (application time) and `recorded_at` (Fabric ledger transaction time) are returned and serialized cleanly to the frontend proxy routes.
    - Verify `400`, `401/403`, `404`, `409` (duplicate `event_id`), and `503` (Fabric unavailable -> fail-closed guard) responses.
 4. Once all integration checks pass, proceed directly to **Task 29**.
-
 ```
 
 ---
