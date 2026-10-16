@@ -32,8 +32,10 @@ from app.layer2_camel.intent_contract import (
 )
 from app.layer2_camel.provenance_wrapper import ProvenanceEnvelope, ProvenanceOrigin
 from app.layer3_policy.micro_privilege import MicroPrivilegeSandbox, micro_privilege_sandbox
+from app.layer3_policy.outbound_firewall import ZeroClickOutboundFirewall, outbound_firewall
 
 logger = logging.getLogger(__name__)
+
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +408,8 @@ class DeterministicPolicyGateway:
     def __init__(self) -> None:
         self.ifc_engine = PydanticIFCRuleEngine()
         self.micro_privilege_sandbox: MicroPrivilegeSandbox = micro_privilege_sandbox
+        self.outbound_firewall: ZeroClickOutboundFirewall = outbound_firewall
+
 
 
     def evaluate_tool_call(self, request: PolicyEvaluationRequest) -> PolicyEvaluationResult:
@@ -581,6 +585,33 @@ class DeterministicPolicyGateway:
                 execution_token_hmac=None,
                 intent_hmac_hash=locked_hmac_hash,
             )
+
+        # 2a-3. Task 19 Zero-Click Outbound Exfiltration, URL/DNS & SSRF Firewall
+        fw_tool_res = self.outbound_firewall.inspect_tool_call_urls(tool_name, request.tool_arguments)
+        if not fw_tool_res.allowed:
+            violation = IFCViolationDetail(
+                arg_name="url",
+                sink_category="OUTBOUND_FIREWALL_SSRF_OR_EXFIL",
+                actual_origin="UNTRUSTED_EXT",
+                required_origins=["WHITELISTED_DOMAIN"],
+                risk_id=23 if 23 in fw_tool_res.risk_category_ids else 21,
+                description=fw_tool_res.reason,
+            )
+            return PolicyEvaluationResult(
+                session_id=session_id,
+                tool_name=tool_name,
+                execution_permitted=False,
+                requires_human_approval_card=False,
+                action_taken="BLOCKED",
+                policy_reference="RISK_23_SSRF_OR_EXFIL_FIREWALL",
+                reason=fw_tool_res.reason,
+                ifc_violations=[violation],
+                risk_category_ids=fw_tool_res.risk_category_ids,
+                threat_detected=True,
+                execution_token_hmac=None,
+                intent_hmac_hash=locked_hmac_hash,
+            )
+
 
 
         # 2b. Contract prohibited operations check

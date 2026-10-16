@@ -49,6 +49,14 @@ from app.layer3_policy.micro_privilege import (
     SessionPrivilegeState,
     micro_privilege_sandbox,
 )
+from app.layer3_policy.outbound_firewall import (
+    DEFAULT_WHITELISTED_DOMAINS,
+    OutboundFirewallResult,
+    URLInspectionFinding,
+    ZeroClickOutboundFirewall,
+    calculate_shannon_entropy,
+    outbound_firewall,
+)
 
 __all__ = [
     "BudgetCheckResult",
@@ -87,5 +95,13 @@ __all__ = [
     "SHELL_EXECUTION_TOOLS",
     "BULK_EXPORT_TOOLS",
     "HIGH_RISK_STRIPPED_TOOLS",
+    # Task 19 — Zero-Click Outbound Exfiltration, URL/DNS, & SSRF Firewall
+    "ZeroClickOutboundFirewall",
+    "OutboundFirewallResult",
+    "URLInspectionFinding",
+    "outbound_firewall",
+    "DEFAULT_WHITELISTED_DOMAINS",
+    "calculate_shannon_entropy",
 ]
+
 

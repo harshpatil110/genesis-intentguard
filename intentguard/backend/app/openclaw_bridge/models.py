@@ -171,6 +171,9 @@ class OutboundOutputInterceptResponse(BaseModel):
     action_taken:            Literal["SAFE_EXECUTED", "SURGICALLY_REDACTED", "BLOCKED"]
     threat_detected:         bool
     risk_category_ids:       List[int] = Field(default_factory=list)
+    exfiltration_links_removed: List[str] = Field(default_factory=list)
+    sanitized_output_text:   Optional[str] = None
+
 
 
 # ---------------------------------------------------------------------------

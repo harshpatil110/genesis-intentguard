@@ -82,8 +82,13 @@ from app.layer3_policy.micro_privilege import (
     PermissionMask,
     micro_privilege_sandbox,
 )
+from app.layer3_policy.outbound_firewall import (
+    ZeroClickOutboundFirewall,
+    outbound_firewall,
+)
 
 from app.layer3_policy.po_verifier import (
+
     PurchaseOrderVerifier,
     POVerificationResult,
     purchase_order_verifier,
@@ -189,6 +194,8 @@ class OpenClawInterceptorBridge:
     """Active session registry and interceptor bridge coordinator."""
     session_intent_contracts: Dict[str, dict] = {}
     micro_privilege_sandbox: MicroPrivilegeSandbox = micro_privilege_sandbox
+    outbound_firewall: ZeroClickOutboundFirewall = outbound_firewall
+
 
 
 session_intent_contracts = OpenClawInterceptorBridge.session_intent_contracts
@@ -910,8 +917,46 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
             threat_detected=True,
         )
 
+    # ── 0c. Task 19 Zero-Click Outbound Exfiltration, URL/DNS & SSRF Firewall Check ───
+    fw_tool_res = outbound_firewall.inspect_tool_call_urls(req.tool_name, req.tool_arguments)
+    if not fw_tool_res.allowed:
+        event = _telemetry_event(
+            session_id=req.session_id,
+            hook_stage="HOOK_2_TOOL_CALL",
+            modality_or_tool=req.tool_name,
+            threat_detected=True,
+            action_taken="BLOCKED",
+            risk_category_ids=fw_tool_res.risk_category_ids,
+            summary=f"[FIREWALL BLOCKED] Tool '{req.tool_name}' blocked: {fw_tool_res.reason}",
+            details={
+                "intercept_id": intercept_id,
+                "tool": req.tool_name,
+                "urls_inspected": [f.model_dump() for f in fw_tool_res.urls_inspected],
+                "reason": fw_tool_res.reason,
+            },
+        )
+        await telemetry_manager.broadcast_event(event)
+        logger.warning(
+            "Hook2 [%s] session=%s tool=%s BLOCKED by outbound firewall: %s",
+            intercept_id, req.session_id, req.tool_name, fw_tool_res.reason,
+        )
+        return ToolCallInterceptResponse(
+            intercept_id=intercept_id,
+            session_id=req.session_id,
+            execution_permitted=False,
+            requires_human_approval_card=False,
+            approval_card_id=None,
+            action_taken="BLOCKED",
+            policy_reference="TASK19_OUTBOUND_FIREWALL_SSRF_OR_EXFIL",
+            reason=fw_tool_res.reason,
+            execution_token_hmac=None,
+            risk_category_ids=fw_tool_res.risk_category_ids,
+            threat_detected=True,
+        )
+
     # ── 1. Layer 3 Deterministic Policy Gateway & Pydantic IFC Check ─────────
     contract_data = session_intent_contracts.get(req.session_id)
+
 
     if contract_data is None:
         reg_contract = intent_contract_registry.get_contract(req.session_id)
@@ -1114,91 +1159,67 @@ async def intercept_memory_write(req: MemoryWriteInterceptRequest) -> MemoryWrit
 async def intercept_outbound_output(req: OutboundOutputInterceptRequest) -> OutboundOutputInterceptResponse:
     """
     Hook 4 — Outbound Output / Zero-Click Exfiltration Firewall.
-    Scans agent responses for EchoLeak, SSRF, and forged tool output tags.
+    Scans agent responses for EchoLeak, SSRF, non-whitelisted URLs, confidential leaks,
+    and forged tool output tags using ZeroClickOutboundFirewall.
     """
-    intercept_id   = _new_id()
-    response_text  = req.raw_agent_response
-    blocked_urls:  List[str] = []
-    forged_tags:   List[str] = []
-    threat_detected = False
-    risk_category_ids: List[int] = []
+    intercept_id = _new_id()
 
-    # ── 1. EchoLeak: Markdown image exfiltration ─────────────────────────────
-    for match in _MARKDOWN_IMAGE_RE.finditer(response_text):
-        url = match.group(2)
-        if not _is_domain_allowed(url):
-            blocked_urls.append(url)
-            response_text = response_text.replace(
-                match.group(0), f"![{match.group(1)}]([REDACTED_EXFILTRATION_LINK])"
-            )
-            threat_detected = True
-            if 21 not in risk_category_ids:
-                risk_category_ids.append(21)
+    # ── 1. ZeroClickOutboundFirewall processing (Task 19) ───────────────────
+    fw_res = outbound_firewall.inspect_and_sanitize_outbound_text(req.raw_agent_response)
 
-    # ── 2. Unauthorized outbound URLs (from outbound_urls list) ──────────────
+    # ── 2. Check any URLs explicitly listed in req.outbound_urls ────────────
     for url in req.outbound_urls:
-        if not _is_domain_allowed(url):
-            if url not in blocked_urls:
-                blocked_urls.append(url)
-                threat_detected = True
-                if 22 not in risk_category_ids:
-                    risk_category_ids.append(22)
+        finding = outbound_firewall.inspect_url(url, is_markdown_image=False)
+        if finding.is_blocked or finding.sanitized_url != url:
+            if url not in fw_res.exfiltration_links_removed:
+                fw_res.exfiltration_links_removed.append(url)
+            for rid in finding.risk_category_ids:
+                if rid not in fw_res.risk_category_ids:
+                    fw_res.risk_category_ids.append(rid)
+            fw_res.threat_detected = True
 
-    # ── 3. SSRF internal IP detection ────────────────────────────────────────
-    if _SSRF_IP_RE.search(response_text):
-        threat_detected = True
-        if 23 not in risk_category_ids:
-            risk_category_ids.append(23)
-        response_text = _SSRF_IP_RE.sub("[REDACTED_SSRF_IP]", response_text)
-
-    # ── 4. Forged tool output tags ────────────────────────────────────────────
-    for match in _FORGED_TAG_RE.finditer(response_text):
-        forged_tags.append(match.group(0))
-        threat_detected = True
-        if 24 not in risk_category_ids:
-            risk_category_ids.append(24)
-    if forged_tags:
-        response_text = _FORGED_TAG_RE.sub("[REDACTED_FORGED_TAG]", response_text)
-
-    action_taken = "SURGICALLY_REDACTED" if (blocked_urls or forged_tags) else "SAFE_EXECUTED"
-    if threat_detected and action_taken == "SAFE_EXECUTED":
-        action_taken = "SURGICALLY_REDACTED"
+    action_taken = "SURGICALLY_REDACTED" if fw_res.threat_detected else "SAFE_EXECUTED"
 
     response = OutboundOutputInterceptResponse(
         intercept_id=intercept_id,
-        sanitized_agent_response=response_text,
-        blocked_urls=blocked_urls,
-        stripped_forged_tags=forged_tags,
-        action_taken=action_taken,  # type: ignore[arg-type]
-        threat_detected=threat_detected,
-        risk_category_ids=risk_category_ids,
+        sanitized_agent_response=fw_res.sanitized_text,
+        sanitized_output_text=fw_res.sanitized_text,
+        blocked_urls=fw_res.exfiltration_links_removed,
+        exfiltration_links_removed=fw_res.exfiltration_links_removed,
+        stripped_forged_tags=fw_res.forged_tags_removed,
+        action_taken=action_taken,
+        threat_detected=fw_res.threat_detected,
+        risk_category_ids=sorted(list(set(fw_res.risk_category_ids))),
     )
 
     event = _telemetry_event(
         session_id=req.session_id,
         hook_stage="HOOK_4_OUTBOUND",
         modality_or_tool="agent_response",
-        threat_detected=threat_detected,
+        threat_detected=fw_res.threat_detected,
         action_taken=action_taken,
-        risk_category_ids=risk_category_ids,
+        risk_category_ids=response.risk_category_ids,
         summary=(
-            f"[EXFILTRATION BLOCKED] {len(blocked_urls)} URL(s) stripped from output"
-            if threat_detected
+            f"[EXFILTRATION BLOCKED] {len(fw_res.exfiltration_links_removed)} URL(s) stripped from output"
+            if fw_res.threat_detected
             else "Outbound output is clean"
         ),
         details={
             "intercept_id": intercept_id,
-            "blocked_urls": blocked_urls,
-            "forged_tags": forged_tags,
+            "blocked_urls": fw_res.exfiltration_links_removed,
+            "exfiltration_links_removed": fw_res.exfiltration_links_removed,
+            "forged_tags": fw_res.forged_tags_removed,
+            "reason": fw_res.reason,
         },
     )
     await telemetry_manager.broadcast_event(event)
 
     logger.info(
         "Hook4 [%s] session=%s threat=%s action=%s blocked_urls=%d",
-        intercept_id, req.session_id, threat_detected, action_taken, len(blocked_urls),
+        intercept_id, req.session_id, fw_res.threat_detected, action_taken, len(fw_res.exfiltration_links_removed),
     )
     return response
+
 
 
 # ========================= TELEMETRY HISTORY ================================
