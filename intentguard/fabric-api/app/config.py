@@ -17,6 +17,7 @@ class FabricSettings(BaseSettings):
     FABRIC_CHANNEL_NAME: str = "intentguard"
     FABRIC_CHAINCODE_NAME: str = "intentguard"
     FABRIC_CRYPTO_PATH: str = "/home/user/fabric-dev/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com"
+    FABRIC_API_KEY: str = "intentguard_local_dev_key"
 
     model_config = SettingsConfigDict(
         env_file=".env",
