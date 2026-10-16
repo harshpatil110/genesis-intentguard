@@ -101,6 +101,14 @@ from app.blockchain_client.audit_dispatcher import (
     AuditDispatcher,
     audit_dispatcher,
 )
+from app.layer3_policy.fail_closed_guard import (
+    AntiBypassTokenVerifier,
+    FailClosedCircuitBreaker,
+    SandboxToolVerifyRequest,
+    SandboxToolVerifyResponse,
+    anti_bypass_verifier,
+    fail_closed_breaker,
+)
 from app.openclaw_bridge.models import (
     InboundInterceptRequest,
     InboundInterceptResponse,
@@ -873,6 +881,43 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
     """
     intercept_id = _new_id()
 
+    # ── 0a. Task 29 Fail-Closed Circuit Breaker Check (Risk #33) ─────────────
+    fail_closed_res = fail_closed_breaker.enforce_fail_closed_before_action(req.tool_name)
+    if fail_closed_res is not None and not fail_closed_res.allow_sandbox_execution:
+        event = _telemetry_event(
+            session_id=req.session_id,
+            hook_stage="HOOK_2_TOOL_CALL",
+            modality_or_tool=req.tool_name,
+            threat_detected=True,
+            action_taken="BLOCKED",
+            risk_category_ids=fail_closed_res.risk_category_ids,
+            summary=f"[FAIL-CLOSED LOCKDOWN] Tool '{req.tool_name}' blocked: {fail_closed_res.reason}",
+            details={
+                "intercept_id": intercept_id,
+                "tool": req.tool_name,
+                "reason": fail_closed_res.reason,
+                "circuit_snapshot": fail_closed_breaker.get_circuit_snapshot(),
+            },
+        )
+        await telemetry_manager.broadcast_event(event)
+        logger.warning(
+            "Hook2 [%s] session=%s tool=%s BLOCKED by fail-closed circuit breaker: %s",
+            intercept_id, req.session_id, req.tool_name, fail_closed_res.reason,
+        )
+        return ToolCallInterceptResponse(
+            intercept_id=intercept_id,
+            session_id=req.session_id,
+            execution_permitted=False,
+            requires_human_approval_card=False,
+            approval_card_id=None,
+            action_taken="BLOCKED",
+            policy_reference="TASK29_FAIL_CLOSED_CIRCUIT_BREAKER_RISK_33",
+            reason=fail_closed_res.reason,
+            execution_token_hmac=None,
+            risk_category_ids=fail_closed_res.risk_category_ids,
+            threat_detected=True,
+        )
+
     # ── 0. Step-0 Deterministic Policy & Resource Budget Check ───────────────
     budget_res = resource_budget_enforcer.check_tool_call_budget(
         session_id=req.session_id,
@@ -1122,6 +1167,18 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
         card_id = None
         approval_card_dict = None
 
+    # Task 29: Issue cryptographic ExecutionPermitToken for permitted execution
+    issued_permit_token = None
+    final_execution_token_hmac = eval_res.execution_token_hmac
+    if eval_res.execution_permitted and not eval_res.requires_human_approval_card:
+        issued_permit_token = anti_bypass_verifier.issue_permit_token(
+            session_id=req.session_id,
+            tool_name=req.tool_name,
+            tool_arguments=req.tool_arguments,
+            intent_hmac_hash=eval_res.intent_hmac_hash or req.intent_hmac_hash or ("0" * 64),
+        )
+        final_execution_token_hmac = issued_permit_token.signature_hmac
+
     response = ToolCallInterceptResponse(
         intercept_id=intercept_id,
         session_id=req.session_id,
@@ -1132,7 +1189,7 @@ async def intercept_tool_call(req: ToolCallInterceptRequest) -> ToolCallIntercep
         action_taken=eval_res.action_taken,
         policy_reference=eval_res.policy_reference,
         reason=eval_res.reason,
-        execution_token_hmac=eval_res.execution_token_hmac,
+        execution_token_hmac=final_execution_token_hmac,
         risk_category_ids=eval_res.risk_category_ids,
         threat_detected=eval_res.threat_detected,
     )
@@ -1530,6 +1587,74 @@ async def decloak_document_endpoint(req: DocumentDeCloakRequest) -> DocumentDeCl
         filename=req.filename,
         modality=req.modality,
     )
+
+
+# ========================= TASK 29 PRE-EXECUTION GATE =======================
+
+class CircuitBreakerStatusUpdate(BaseModel):
+    service_name: Optional[str] = None
+    status_code: Optional[int] = 200
+    error_msg: Optional[str] = None
+    reset: Optional[bool] = False
+
+
+openclaw_sandbox_router = APIRouter(prefix="/openclaw", tags=["openclaw-sandbox"])
+
+
+@openclaw_sandbox_router.post("/verify-execution-token", response_model=SandboxToolVerifyResponse)
+@interceptor_router.post("/verify-execution-token", response_model=SandboxToolVerifyResponse)
+async def verify_execution_token_endpoint(req: SandboxToolVerifyRequest) -> SandboxToolVerifyResponse:
+    """
+    Task 29 — Pre-Execution Sandbox Gate (Risk #30 & Risk #33).
+    Verifies that the tool call has a valid, unexpired, un-replayed ExecutionPermitToken,
+    and checks if the fail-closed circuit breaker is tripped for sensitive actions.
+    """
+    # 1. Fail-closed circuit breaker check
+    fail_closed_res = fail_closed_breaker.enforce_fail_closed_before_action(req.tool_name)
+    if fail_closed_res is not None:
+        return fail_closed_res
+
+    # 2. Anti-bypass token verification
+    verify_res = anti_bypass_verifier.verify_permit_token(req)
+    return verify_res
+
+
+@openclaw_sandbox_router.get("/circuit-status")
+@interceptor_router.get("/circuit-status")
+async def get_circuit_status():
+    """Returns the diagnostic snapshot of all tracked security dependencies."""
+    return {
+        "status": "active",
+        "services": fail_closed_breaker.get_circuit_snapshot(),
+    }
+
+
+@openclaw_sandbox_router.post("/circuit-status")
+@interceptor_router.post("/circuit-status")
+async def update_circuit_status(payload: CircuitBreakerStatusUpdate):
+    """Updates the status of a security dependency or trips/resets it."""
+    if payload.reset:
+        fail_closed_breaker.reset_circuit()
+        return {
+            "status": "reset",
+            "message": "All security dependencies reset to healthy.",
+            "circuit_snapshot": fail_closed_breaker.get_circuit_snapshot(),
+        }
+
+    if payload.service_name:
+        fail_closed_breaker.record_service_status(
+            service_name=payload.service_name,
+            status_code=payload.status_code if payload.status_code is not None else 200,
+            error_msg=payload.error_msg,
+        )
+
+    return {
+        "status": "updated",
+        "service_name": payload.service_name,
+        "recorded_code": payload.status_code,
+        "circuit_snapshot": fail_closed_breaker.get_circuit_snapshot(),
+    }
+
 
 
 

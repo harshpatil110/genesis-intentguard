@@ -67,6 +67,17 @@ from app.layer3_policy.step_back_approval import (
     StepBackApprovalEngine,
     step_back_approval_engine,
 )
+from app.layer3_policy.fail_closed_guard import (
+    AntiBypassTokenVerifier,
+    DependencyHealthState,
+    ExecutionPermitToken,
+    FailClosedCircuitBreaker,
+    SandboxToolVerifyRequest,
+    SandboxToolVerifyResponse,
+    SENSITIVE_WRITE_AND_PAYMENT_TOOLS,
+    anti_bypass_verifier,
+    fail_closed_breaker,
+)
 
 __all__ = [
     "BudgetCheckResult",
@@ -120,6 +131,16 @@ __all__ = [
     "ApprovalResolutionRequest",
     "ApprovalResolutionResponse",
     "BlockchainAuditEventPayload",
+    # Task 29 — Fail-Closed Circuit Breaker & Anti-Bypass Guard
+    "AntiBypassTokenVerifier",
+    "DependencyHealthState",
+    "ExecutionPermitToken",
+    "FailClosedCircuitBreaker",
+    "SandboxToolVerifyRequest",
+    "SandboxToolVerifyResponse",
+    "SENSITIVE_WRITE_AND_PAYMENT_TOOLS",
+    "anti_bypass_verifier",
+    "fail_closed_breaker",
 ]
 
 

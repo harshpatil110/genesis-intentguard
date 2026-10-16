@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.openclaw_bridge.interceptor import interceptor_router
+from app.openclaw_bridge.interceptor import interceptor_router, openclaw_sandbox_router
 from app.openclaw_bridge.telemetry_ws import telemetry_manager
 
 logging.basicConfig(
@@ -49,6 +49,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Router Mounting
 app.include_router(interceptor_router)
+app.include_router(openclaw_sandbox_router)
 
 # Mount Mock Hyperledger Fabric HTTP Server (Task 23)
 from app.blockchain_client.mock_fabric_server import mock_fabric_router

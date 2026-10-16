@@ -392,3 +392,72 @@ export async function interceptOutboundOutput(
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Task 29: Pre-Execution Sandbox Verification Gate (Risks #30 & #33)
+// ---------------------------------------------------------------------------
+
+export interface SandboxToolVerifyPayload {
+  sessionId?: string;
+  session_id?: string;
+  toolName?: string;
+  tool_name?: string;
+  toolArguments?: Record<string, any>;
+  tool_arguments?: Record<string, any>;
+  permitToken?: any;
+  permit_token?: any;
+  rawExecutionTokenHmac?: string | null;
+  raw_execution_token_hmac?: string | null;
+}
+
+export interface SandboxToolVerifyResult {
+  verified: boolean;
+  allow_sandbox_execution: boolean;
+  action_taken: "SAFE_EXECUTED" | "BLOCKED" | string;
+  threat_detected: boolean;
+  risk_category_ids: number[];
+  bypass_attempt_detected: boolean;
+  fail_closed_triggered: boolean;
+  reason: string;
+}
+
+/**
+ * Task 29: Pre-Execution Sandbox Gate.
+ * Enforces anti-bypass ExecutionPermitToken verification and fail-closed circuit breaker
+ * check before any containerized sandbox tool can be spawned or executed.
+ */
+export async function verifyAndExecuteSandboxTool(
+  payload: SandboxToolVerifyPayload
+): Promise<SandboxToolVerifyResult> {
+  const gatewayUrl = getIntentGuardGatewayUrl();
+  const endpoint = `${gatewayUrl}/openclaw/verify-execution-token`;
+  const postBody = {
+    session_id: payload.sessionId || payload.session_id || "openclaw-session",
+    tool_name: payload.toolName || payload.tool_name || "",
+    tool_arguments: payload.toolArguments || payload.tool_arguments || {},
+    permit_token: payload.permitToken || payload.permit_token || null,
+    raw_execution_token_hmac:
+      payload.rawExecutionTokenHmac || payload.raw_execution_token_hmac || null,
+  };
+
+  try {
+    const response = await axios.post(endpoint, postBody, {
+      headers: { "Content-Type": "application/json" },
+      timeout: 15000,
+    });
+    return response.data as SandboxToolVerifyResult;
+  } catch (error: any) {
+    console.error("[IntentGuard] Sandbox verify execution error:", error?.message || error);
+    return {
+      verified: false,
+      allow_sandbox_execution: false,
+      action_taken: "BLOCKED",
+      threat_detected: true,
+      bypass_attempt_detected: false,
+      fail_closed_triggered: true,
+      risk_category_ids: [33],
+      reason: `Gateway error / fail-closed: ${error?.message || "Unreachable"}`,
+    };
+  }
+}
+
