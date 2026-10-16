@@ -24,6 +24,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { SplitScreenArena } from "../components/SplitScreenArena";
+import { XRayDiffViewer } from "../components/XRayDiffViewer";
 
 export default function IntentGuardDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTabId>("arena");
@@ -270,45 +271,7 @@ export default function IntentGuardDashboard() {
 
           {activeTab === "xray" && (
             <div id="tab-xray" className="flex flex-col gap-6">
-              <div className="bg-[#FFFFFF] border border-[#E5E4DF] p-6">
-                <div className="flex items-center justify-between border-b border-[#E5E4DF] pb-4">
-                  <div>
-                    <h2 className="text-base font-bold text-[#1C1917] font-mono">
-                      2. PRE-OCR X-RAY DIFF INSPECTOR
-                    </h2>
-                    <p className="text-xs text-[#57534E] mt-1">
-                      Visual vs. Raw Parser Mechanical De-Cloaker, Surgical Redaction Diffs, and Live Cryptographic Hashes.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="p-4 bg-[#FAF9F6] border border-[#E5E4DF] font-mono text-xs">
-                    <span className="text-[10px] text-[#78716C] uppercase block mb-1">
-                      raw_evidence_sha256
-                    </span>
-                    <span className="break-all font-semibold text-[#1C1917]">
-                      e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-                    </span>
-                  </div>
-                  <div className="p-4 bg-[#FAF9F6] border border-[#E5E4DF] font-mono text-xs">
-                    <span className="text-[10px] text-[#78716C] uppercase block mb-1">
-                      redacted_diff_sha256
-                    </span>
-                    <span className="break-all font-semibold text-[#1C1917]">
-                      9f83397d8527b74fc400402d329302eec82e3b534527ac08e6b0e988e3868dce
-                    </span>
-                  </div>
-                  <div className="p-4 bg-[#FAF9F6] border border-[#E5E4DF] font-mono text-xs">
-                    <span className="text-[10px] text-[#78716C] uppercase block mb-1">
-                      intent_hmac_hash
-                    </span>
-                    <span className="break-all font-semibold text-[#1C1917]">
-                      {systemState.activeIntentHmacSample}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <XRayDiffViewer onSwitchTab={setActiveTab} />
             </div>
           )}
 
