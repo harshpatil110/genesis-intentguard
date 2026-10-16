@@ -32,6 +32,11 @@ from app.blockchain_client.http_client import (
     BlockchainSchemaValidationError,
     FabricGatewayHttpClient,
 )
+from app.blockchain_client.mock_fabric_server import (
+    clear_mock_ledger,
+    get_mock_ledger,
+    mock_fabric_router,
+)
 
 __all__ = [
     # Task 21 — Strict 12-Field Fabric Audit Event Builder & Validator
@@ -50,4 +55,8 @@ __all__ = [
     "BlockchainAuthError",
     "BlockchainConflictError",
     "BlockchainCircuitBreakerException",
+    # Task 23 — Built-In Mock Fabric HTTP Server
+    "mock_fabric_router",
+    "clear_mock_ledger",
+    "get_mock_ledger",
 ]
