@@ -145,7 +145,7 @@ class FabricGatewayHttpClient:
     def _auth_headers(self) -> Dict[str, str]:
         return {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
+            "x-api-key": self.api_key,
         }
 
     @staticmethod
@@ -183,7 +183,7 @@ class FabricGatewayHttpClient:
 
     async def record_audit_event(self, event: FabricAuditEventPayload) -> Dict[str, Any]:
         """
-        POST the validated 12-field FabricAuditEventPayload to the ledger.
+        POST the validated FabricAuditEventPayload to the ledger.
 
         Returns the confirmed response dict containing at minimum:
             {"recorded": True, "transaction_id": "<tx_id>"}
@@ -195,7 +195,13 @@ class FabricGatewayHttpClient:
             BlockchainCircuitBreakerException — HTTP 5xx (high-risk events)
             BlockchainAPIError               — all other unexpected errors
         """
-        payload_dict = event.model_dump()
+        if hasattr(event, "to_chaincode_json_dict"):
+            payload_dict = event.to_chaincode_json_dict()
+        elif hasattr(event, "model_dump"):
+            payload_dict = event.model_dump()
+        else:
+            payload_dict = dict(event)
+
         headers = self._auth_headers()
 
         try:

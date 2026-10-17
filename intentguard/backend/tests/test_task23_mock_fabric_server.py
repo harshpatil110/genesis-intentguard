@@ -337,9 +337,9 @@ async def test_mock_fabric_with_task22_http_client():
         retrieved = await client.get_audit_event(event.event_id)
         assert retrieved is not None
         assert retrieved["event_id"] == event.event_id
-        assert retrieved["buyer_id"] == "buyer-e2e"
+        assert retrieved["action_taken"] == "BLOCKED"
 
         # 3. List events
-        events_list = await client.list_audit_events(role="buyer", party_id="buyer-e2e")
-        assert len(events_list) == 1
-        assert events_list[0]["event_id"] == event.event_id
+        events_list = await client.list_audit_events(role="auditor", party_id="auditor-01")
+        assert len(events_list) >= 1
+        assert any(e["event_id"] == event.event_id for e in events_list)

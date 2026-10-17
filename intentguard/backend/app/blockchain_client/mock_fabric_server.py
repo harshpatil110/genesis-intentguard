@@ -54,31 +54,39 @@ def clear_mock_ledger() -> None:
 # Authentication Dependency
 # ---------------------------------------------------------------------------
 
-def verify_auth_header(authorization: Optional[str] = Header(None)) -> str:
+def verify_auth_header(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="x-api-key"),
+) -> str:
     """
-    Validate the incoming Authorization Bearer token against configured API keys.
+    Validate the incoming x-api-key or Authorization Bearer token against configured API keys.
     Raises HTTP 401 Unauthorized if missing, malformed, or unrecognized.
     """
-    if not authorization:
+    token: Optional[str] = None
+    if x_api_key:
+        token = x_api_key.strip()
+    elif authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization[len("Bearer "):].strip()
+        else:
+            token = authorization.strip()
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header",
+            detail="Missing Authorization or x-api-key header",
         )
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header must start with 'Bearer '",
-        )
-    token = authorization[len("Bearer "):].strip()
+
     valid_tokens = {
         "intentguard_local_dev_key",
         "intentguard-fabric-gateway-dev-key-2026",
+        "8339cd137fcf08facdb652c51affce062edfbb68043384f668b008c010927936",
         getattr(settings, "BLOCKCHAIN_API_KEY", "intentguard_local_dev_key"),
     }
     if token not in valid_tokens and not token.startswith("intentguard"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Bearer token for Fabric Gateway",
+            detail="Invalid API key or Bearer token for Fabric Gateway",
         )
     return token
 

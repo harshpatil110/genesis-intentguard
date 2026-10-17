@@ -96,11 +96,11 @@ class FabricAuditEventPayload(BaseModel):
     )
 
     # ---- Fields 3 & 4: Party identifiers ---------------------------------
-    buyer_id: str
-    supplier_id: str
+    buyer_id: str = "buyer-01"
+    supplier_id: str = "supplier-01"
 
     # ---- Field 5: Input modality that triggered the event ----------------
-    input_modality: str
+    input_modality: str = "text"
 
     # ---- Field 6: Deterministic policy action taken ----------------------
     action_taken: str
@@ -117,7 +117,49 @@ class FabricAuditEventPayload(BaseModel):
     risk_category_ids: List[Union[int, str]] = Field(default_factory=list)
 
     # ---- Field 12: Whether a threat was detected ------------------------
-    threat_detected: bool
+    threat_detected: bool = True
+
+    @property
+    def event_type(self) -> str:
+        return "PROMPT_INJECTION_DETECTED" if self.threat_detected else "SAFE_BUSINESS_INTENT"
+
+    @property
+    def source(self) -> str:
+        return "intentguard_layer3"
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_defaults_and_synonyms(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            threat = data.get("threat_detected")
+            if "event_type" in data and threat is None:
+                data["threat_detected"] = (data["event_type"] == "PROMPT_INJECTION_DETECTED")
+            data.pop("event_type", None)
+            data.pop("source", None)
+        return data
+
+    def to_chaincode_json_dict(self) -> Dict[str, Any]:
+        """
+        Maps internal fields to the exact expected keys of the teammate's Node.js Fabric REST API / chaincode:
+        {
+            "event_id": self.event_id,
+            "event_type": "PROMPT_INJECTION_DETECTED" if self.threat_detected else "SAFE_BUSINESS_INTENT",
+            "source": "intentguard_layer3",
+            "action_taken": self.action_taken,
+            "raw_evidence_sha256": self.raw_evidence_sha256,
+            "redacted_diff_sha256": self.redacted_diff_sha256,
+            "intent_hmac_hash": self.intent_hmac_hash
+        }
+        """
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "source": self.source,
+            "action_taken": self.action_taken,
+            "raw_evidence_sha256": self.raw_evidence_sha256,
+            "redacted_diff_sha256": self.redacted_diff_sha256,
+            "intent_hmac_hash": self.intent_hmac_hash,
+        }
 
     # ======================================================================
     # Rule A: Non-empty string validators for the first 10 string fields
@@ -371,23 +413,10 @@ class FabricAuditEventBuilder:
     @staticmethod
     def to_chaincode_json_dict(event: FabricAuditEventPayload) -> Dict[str, Any]:
         """
-        Serializes the validated 12-field payload to an exact dictionary
-        ready for JSON serialization and HTTP transmission to Hyperledger Fabric.
+        Serializes the validated payload to the exact 7-field dictionary required by
+        the teammate's remote Node.js Fabric REST API / chaincode.
         """
-        return {
-            "event_id": event.event_id,
-            "timestamp": event.timestamp,
-            "buyer_id": event.buyer_id,
-            "supplier_id": event.supplier_id,
-            "input_modality": event.input_modality,
-            "action_taken": event.action_taken,
-            "policy_reference": event.policy_reference,
-            "raw_evidence_sha256": event.raw_evidence_sha256,
-            "redacted_diff_sha256": event.redacted_diff_sha256,
-            "intent_hmac_hash": event.intent_hmac_hash,
-            "risk_category_ids": event.risk_category_ids,
-            "threat_detected": event.threat_detected,
-        }
+        return event.to_chaincode_json_dict()
 
 
 # ---------------------------------------------------------------------------

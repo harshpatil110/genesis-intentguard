@@ -84,6 +84,8 @@ def test_valid_12_field_payload_matches_exact_contract():
     assert dumped["intent_hmac_hash"] == HEX_C_64
     assert dumped["risk_category_ids"] == [2, 18]
     assert dumped["threat_detected"] is True
+    assert ev.event_type == "PROMPT_INJECTION_DETECTED"
+    assert ev.source == "intentguard_layer3"
 
     # Verify exact key names (no extra or missing fields)
     expected_keys = {
@@ -331,28 +333,33 @@ def test_normalize_action_safe_executed_no_threat():
 
 
 # ---------------------------------------------------------------------------
-# Test 9: to_chaincode_json_dict produces exactly 12 keys
+# Test 9: to_chaincode_json_dict produces remote Node.js Fabric schema
 # ---------------------------------------------------------------------------
 
-def test_to_chaincode_json_dict_produces_exactly_12_keys():
-    """to_chaincode_json_dict must return exactly 12 keys, all JSON-serializable."""
+def test_to_chaincode_json_dict_produces_remote_schema():
+    """to_chaincode_json_dict must return the exact 7 keys required by the remote Fabric API."""
     ev = FabricAuditEventPayload(**VALID_BASE_KWARGS)
     result = FabricAuditEventBuilder.to_chaincode_json_dict(ev)
 
-    assert len(result) == 12, f"Expected 12 keys, got {len(result)}: {list(result.keys())}"
+    assert len(result) == 7, f"Expected 7 keys, got {len(result)}: {list(result.keys())}"
     expected_keys = {
-        "event_id", "timestamp", "buyer_id", "supplier_id", "input_modality",
-        "action_taken", "policy_reference", "raw_evidence_sha256",
-        "redacted_diff_sha256", "intent_hmac_hash", "risk_category_ids", "threat_detected",
+        "event_id", "event_type", "source", "action_taken",
+        "raw_evidence_sha256", "redacted_diff_sha256", "intent_hmac_hash",
     }
     assert set(result.keys()) == expected_keys
+    assert result["event_id"] == "evt-001"
+    assert result["event_type"] == "PROMPT_INJECTION_DETECTED"
+    assert result["source"] == "intentguard_layer3"
+    assert result["action_taken"] == "BLOCKED"
+    assert result["raw_evidence_sha256"] == HEX_A_64
+    assert result["redacted_diff_sha256"] == HEX_B_64
+    assert result["intent_hmac_hash"] == HEX_C_64
 
     import json
     json_str = json.dumps(result)  # Should not raise
     reparsed = json.loads(json_str)
     assert reparsed["event_id"] == "evt-001"
-    assert reparsed["threat_detected"] is True
-    assert isinstance(reparsed["risk_category_ids"], list)
+    assert reparsed["event_type"] == "PROMPT_INJECTION_DETECTED"
 
 
 # ---------------------------------------------------------------------------

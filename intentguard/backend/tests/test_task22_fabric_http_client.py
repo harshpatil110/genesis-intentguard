@@ -88,10 +88,11 @@ def make_payload(threat_detected: bool = True, action_taken: str = "BLOCKED") ->
 @respx.mock
 async def test_record_audit_event_success_201():
     """201 response with recorded=True and transaction_id returns the dict."""
+    import json
     event = make_payload()
     mock_response = {"recorded": True, "transaction_id": "tx_abc123", "ledger_height": 42}
 
-    respx.post(FULL_EVENTS_URL).mock(
+    route = respx.post(FULL_EVENTS_URL).mock(
         return_value=httpx.Response(201, json=mock_response)
     )
 
@@ -101,6 +102,17 @@ async def test_record_audit_event_success_201():
     assert result["recorded"] is True
     assert result["transaction_id"] == "tx_abc123"
     assert result["ledger_height"] == 42
+    assert route.called
+    sent_request = route.calls.last.request
+    assert sent_request.headers.get("x-api-key") == MOCK_API_KEY
+    sent_json = json.loads(sent_request.content)
+    assert sent_json["event_id"] == event.event_id
+    assert sent_json["event_type"] == "PROMPT_INJECTION_DETECTED"
+    assert sent_json["source"] == "intentguard_layer3"
+    assert sent_json["action_taken"] == "BLOCKED"
+    assert sent_json["raw_evidence_sha256"] == HEX_A
+    assert sent_json["redacted_diff_sha256"] == HEX_B
+    assert sent_json["intent_hmac_hash"] == HEX_C
 
 
 # ---------------------------------------------------------------------------
@@ -405,8 +417,8 @@ async def test_list_audit_events_passes_rbac_headers():
     assert "x-fabric-party-id" in captured_headers, "X-Fabric-Party-Id header missing"
     assert captured_headers["x-fabric-role"] == role
     assert captured_headers["x-fabric-party-id"] == party_id
-    assert "authorization" in captured_headers
-    assert captured_headers["authorization"] == f"Bearer {MOCK_API_KEY}"
+    assert "x-api-key" in captured_headers
+    assert captured_headers["x-api-key"] == MOCK_API_KEY
 
 
 # ---------------------------------------------------------------------------
