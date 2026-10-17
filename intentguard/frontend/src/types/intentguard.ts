@@ -102,3 +102,15 @@ export interface HealthStatus {
   interceptor_bridge_ready: boolean;
   active_telemetry_subscribers: number;
 }
+
+export interface BlockchainVerificationResult {
+  connected: boolean;
+  target_url: string;
+  status_code: number;
+  latency_ms: number;
+  remote_response?: any;
+  mode: string;
+  checked_at: string;
+  error?: string;
+  test_dispatch?: any;
+}

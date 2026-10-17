@@ -61,6 +61,7 @@ yarn-error.log*
 .next/
 out/
 .turbo/
+*.tsbuildinfo
 
 # Operating System Files
 .DS_Store

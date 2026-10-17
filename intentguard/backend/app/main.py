@@ -86,6 +86,163 @@ async def health_check() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Remote Blockchain Verification & Test Proxy Endpoints
+# ---------------------------------------------------------------------------
+import time
+from datetime import datetime, timezone
+import httpx
+from app.blockchain_client.http_client import FabricGatewayHttpClient
+from app.blockchain_client.event_builder import FabricAuditEventBuilder
+
+
+import sys
+
+def _safe_print(msg: str) -> None:
+    try:
+        print(msg)
+    except (UnicodeEncodeError, OSError):
+        try:
+            encoding = sys.stdout.encoding or "utf-8"
+            print(msg.encode(encoding, errors="replace").decode(encoding))
+        except Exception:
+            print(msg.encode("ascii", errors="replace").decode("ascii"))
+
+
+@app.get("/api/blockchain/verify-connection")
+async def verify_blockchain_connection(
+    send_test_ping: bool = False,
+) -> Dict[str, Any]:
+    """
+    Ping the remote Hyperledger Fabric REST API on peer PC with latency measurement.
+    Optionally dispatches a synthetic audit test event if send_test_ping=True.
+    Never throws 500 on network failures; returns connected=False with diagnostic details.
+    """
+    target_url = settings.BLOCKCHAIN_API_BASE_URL.rstrip("/")
+    api_key = settings.BLOCKCHAIN_API_KEY
+    health_url = f"{target_url}/health"
+    headers = {
+        "x-api-key": api_key,
+        "Accept": "application/json",
+    }
+
+    _safe_print("\n" + "=" * 50)
+    _safe_print(f"🔍 [BLOCKCHAIN PING] Checking remote node at {health_url} ...")
+
+    start = time.perf_counter()
+    checked_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(health_url, headers=headers)
+            latency_ms = round((time.perf_counter() - start) * 1000, 2)
+
+            try:
+                body_json = resp.json()
+            except Exception:
+                body_json = {"raw": resp.text}
+
+            _safe_print(
+                f"✅ [BLOCKCHAIN PING SUCCESS] Status: {resp.status_code} | "
+                f"Latency: {latency_ms}ms | Body: {resp.text}"
+            )
+
+            test_dispatch_result: Optional[Dict[str, Any]] = None
+            if send_test_ping and resp.status_code in (200, 201):
+                try:
+                    async with FabricGatewayHttpClient(api_base_url=target_url, api_key=api_key) as f_client:
+                        test_evt = FabricAuditEventBuilder.build_layer3_threat_event(
+                            session_id=f"ping-{int(time.time())}",
+                            action_taken="BLOCKED",
+                            raw_evidence="Cross-laptop live verification ping test",
+                            reason="Remote Fabric node ping from IntentGuard frontend",
+                            risk_category_ids=[2, 18],
+                        )
+                        dispatch_res = await f_client.record_audit_event(test_evt)
+                        test_dispatch_result = {
+                            "status": "success",
+                            "event_id": test_evt.event_id,
+                            "transaction_id": dispatch_res.get("transaction_id"),
+                            "receipt": dispatch_res,
+                        }
+                except Exception as dispatch_err:
+                    test_dispatch_result = {
+                        "status": "dispatch_failed",
+                        "error": str(dispatch_err),
+                    }
+
+            _safe_print("=" * 50 + "\n")
+            return {
+                "connected": resp.status_code in (200, 201),
+                "target_url": target_url,
+                "status_code": resp.status_code,
+                "latency_ms": latency_ms,
+                "remote_response": body_json,
+                "mode": "REMOTE_FABRIC_NODE" if not settings.BLOCKCHAIN_USE_MOCK else "MOCK_NODE",
+                "checked_at": checked_at,
+                "test_dispatch": test_dispatch_result,
+            }
+
+    except Exception as exc:
+        latency_ms = round((time.perf_counter() - start) * 1000, 2)
+        err_msg = str(exc) or repr(exc) or "Connection timed out or host unreachable"
+        _safe_print(f"❌ [BLOCKCHAIN PING FAILED] Target: {health_url} | Error: {err_msg}")
+        _safe_print("=" * 50 + "\n")
+        return {
+            "connected": False,
+            "target_url": target_url,
+            "status_code": 0,
+            "latency_ms": latency_ms,
+            "error": err_msg,
+            "remote_response": None,
+            "mode": "REMOTE_FABRIC_NODE" if not settings.BLOCKCHAIN_USE_MOCK else "MOCK_NODE",
+            "checked_at": checked_at,
+            "test_dispatch": None,
+        }
+
+
+@app.post("/api/blockchain/send-test-event")
+async def send_test_audit_event() -> Dict[str, Any]:
+    """
+    Sends an immediate synthetic audit event to the peer PC's Fabric Gateway.
+    Returns confirmed transaction ID and ledger receipt.
+    """
+    target_url = settings.BLOCKCHAIN_API_BASE_URL.rstrip("/")
+    api_key = settings.BLOCKCHAIN_API_KEY
+    start = time.perf_counter()
+    checked_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        async with FabricGatewayHttpClient(api_base_url=target_url, api_key=api_key) as f_client:
+            test_evt = FabricAuditEventBuilder.build_layer3_threat_event(
+                session_id=f"demo-pitch-{int(time.time())}",
+                action_taken="BLOCKED",
+                raw_evidence="Live Mentor Pitch: Cross-laptop Fabric Ledger verification",
+                reason="Live test event dispatched from IntentGuard UI to Peer PC",
+                risk_category_ids=[2, 14, 18],
+            )
+            res = await f_client.record_audit_event(test_evt)
+            latency_ms = round((time.perf_counter() - start) * 1000, 2)
+            return {
+                "success": True,
+                "target_url": target_url,
+                "latency_ms": latency_ms,
+                "event_id": test_evt.event_id,
+                "transaction_id": res.get("transaction_id"),
+                "receipt": res,
+                "dispatched_at": checked_at,
+            }
+    except Exception as exc:
+        latency_ms = round((time.perf_counter() - start) * 1000, 2)
+        return {
+            "success": False,
+            "target_url": target_url,
+            "latency_ms": latency_ms,
+            "error": str(exc),
+            "dispatched_at": checked_at,
+        }
+
+
+# ---------------------------------------------------------------------------
 # Layer 3 Policy & Resource Budget Endpoints
 # ---------------------------------------------------------------------------
 from app.layer3_policy.resource_budget import resource_budget_enforcer

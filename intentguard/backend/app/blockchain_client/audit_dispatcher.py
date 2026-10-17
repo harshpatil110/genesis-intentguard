@@ -70,7 +70,7 @@ class AuditDispatcher:
         telemetry_mgr: Optional[XRayTelemetryManager] = None,
     ) -> None:
         self.http_client = http_client or FabricGatewayHttpClient(
-            api_base_url=getattr(settings, "BLOCKCHAIN_API_BASE_URL", "http://localhost:8200"),
+            api_base_url=getattr(settings, "BLOCKCHAIN_API_BASE_URL", "http://192.168.21.160:8000"),
             api_key=getattr(settings, "BLOCKCHAIN_API_KEY", "intentguard_local_dev_key"),
         )
         self.telemetry_manager = telemetry_mgr or telemetry_manager

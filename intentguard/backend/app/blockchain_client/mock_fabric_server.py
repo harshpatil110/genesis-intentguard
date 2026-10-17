@@ -79,7 +79,7 @@ def verify_auth_header(
 
     valid_tokens = {
         "intentguard_local_dev_key",
-        "intentguard-fabric-gateway-dev-key-2026",
+        "8339cd137fcf08facdb652c51affce062edfbb68043384f668b008c010927936",
         "8339cd137fcf08facdb652c51affce062edfbb68043384f668b008c010927936",
         getattr(settings, "BLOCKCHAIN_API_KEY", "intentguard_local_dev_key"),
     }

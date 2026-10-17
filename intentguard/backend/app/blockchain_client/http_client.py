@@ -38,10 +38,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 try:
     from app.config import settings
-    _DEFAULT_API_BASE_URL: str = getattr(settings, "BLOCKCHAIN_API_BASE_URL", "http://localhost:8200")
+    _DEFAULT_API_BASE_URL: str = getattr(settings, "BLOCKCHAIN_API_BASE_URL", "http://192.168.21.160:8000")
     _DEFAULT_API_KEY: str = getattr(settings, "BLOCKCHAIN_API_KEY", "intentguard_local_dev_key")
 except Exception:
-    _DEFAULT_API_BASE_URL = "http://localhost:8200"
+    _DEFAULT_API_BASE_URL = "http://192.168.21.160:8000"
     _DEFAULT_API_KEY = "intentguard_local_dev_key"
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,18 @@ class BlockchainCircuitBreakerException(BlockchainAPIError):
 # ---------------------------------------------------------------------------
 # FabricGatewayHttpClient
 # ---------------------------------------------------------------------------
+
+def _safe_print(msg: str) -> None:
+    try:
+        print(msg)
+    except (UnicodeEncodeError, OSError):
+        try:
+            import sys
+            encoding = sys.stdout.encoding or "utf-8"
+            print(msg.encode(encoding, errors="replace").decode(encoding))
+        except Exception:
+            print(msg.encode("ascii", errors="replace").decode("ascii"))
+
 
 class FabricGatewayHttpClient:
     """
@@ -202,11 +214,10 @@ class FabricGatewayHttpClient:
             "Content-Type": "application/json",
         }
         payload_dict = event.model_dump()
-
-        print("\n" + "=" * 50)
-        print(f"🚀 [BLOCKCHAIN DISPATCH] Sending to {url}")
-        print(f"🔑 [HEADERS] {headers}")
-        print(f"📦 [PAYLOAD] {json.dumps(payload_dict, indent=2)}")
+        _safe_print("\n" + "=" * 50)
+        _safe_print(f"🚀 [BLOCKCHAIN DISPATCH] Sending to {url}")
+        _safe_print(f"🔑 [HEADERS] {headers}")
+        _safe_print(f"📦 [PAYLOAD] {json.dumps(payload_dict, indent=2)}")
 
         try:
             response = await self._client.post(
@@ -214,12 +225,12 @@ class FabricGatewayHttpClient:
                 json=payload_dict,
                 headers=headers,
             )
-            print(f"📥 [RESPONSE CODE]: {response.status_code}")
-            print(f"📜 [RESPONSE BODY]: {response.text}")
-            print("=" * 50 + "\n")
+            _safe_print(f"📥 [RESPONSE CODE]: {response.status_code}")
+            _safe_print(f"📜 [RESPONSE BODY]: {response.text}")
+            _safe_print("=" * 50 + "\n")
         except httpx.RequestError as exc:
-            print(f"❌ [BLOCKCHAIN ERROR]: {str(exc)}")
-            print("=" * 50 + "\n")
+            _safe_print(f"❌ [BLOCKCHAIN ERROR]: {str(exc)}")
+            _safe_print("=" * 50 + "\n")
             logger.error("[IntentGuard Fabric] Network error posting event %s: %s", event.event_id, exc)
             self._buffer_and_maybe_circuit_break(event, status_code=503, detail=str(exc))
             # If _is_high_risk() above did not raise (safe events), still surface the error
@@ -228,8 +239,8 @@ class FabricGatewayHttpClient:
                 status_code=503,
             ) from exc
         except Exception as e:
-            print(f"❌ [BLOCKCHAIN ERROR]: {str(e)}")
-            print("=" * 50 + "\n")
+            _safe_print(f"❌ [BLOCKCHAIN ERROR]: {str(e)}")
+            _safe_print("=" * 50 + "\n")
             raise
 
         status = response.status_code

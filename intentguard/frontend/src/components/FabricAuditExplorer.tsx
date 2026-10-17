@@ -58,7 +58,7 @@ const ROLES: RoleConfig[] = [
   },
 ];
 
-const FABRIC_API_URL = process.env.NEXT_PUBLIC_FABRIC_API_URL || "http://localhost:8200";
+const FABRIC_API_URL = process.env.NEXT_PUBLIC_FABRIC_API_URL || "http://192.168.21.160:8000";
 
 const FALLBACK_EVENTS: FabricAuditEvent[] = [
   {

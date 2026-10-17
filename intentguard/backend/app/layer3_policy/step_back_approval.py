@@ -340,7 +340,7 @@ class StepBackApprovalEngine:
 
         if not getattr(settings, "BLOCKCHAIN_USE_MOCK", True):
             try:
-                base_url = getattr(settings, "BLOCKCHAIN_API_BASE_URL", "http://localhost:8200")
+                base_url = getattr(settings, "BLOCKCHAIN_API_BASE_URL", "http://192.168.21.160:8000")
                 url = f"{base_url.rstrip('/')}/api/v1/audit/record"
                 with httpx.Client(timeout=1.0) as client:
                     resp = client.post(url, json=audit_event.model_dump())

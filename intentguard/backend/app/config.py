@@ -128,8 +128,8 @@ class Settings(BaseSettings):
     # BLOCKCHAIN_USE_MOCK=true  → mock responses (Tasks 01-24, standalone dev)
     # BLOCKCHAIN_USE_MOCK=false → live WSL2 Fabric Gateway API
     # ------------------------------------------------------------------
-    BLOCKCHAIN_API_BASE_URL: str = "http://localhost:8200"
-    BLOCKCHAIN_API_KEY: str = "intentguard-fabric-gateway-dev-key-2026"
+    BLOCKCHAIN_API_BASE_URL: str = "http://192.168.21.160:8000"
+    BLOCKCHAIN_API_KEY: str = "8339cd137fcf08facdb652c51affce062edfbb68043384f668b008c010927936"
     BLOCKCHAIN_USE_MOCK: bool = True
     BLOCKCHAIN_TIMEOUT_SECONDS: float = 10.0
     FABRIC_CHANNEL_NAME: str = "intentguard"
