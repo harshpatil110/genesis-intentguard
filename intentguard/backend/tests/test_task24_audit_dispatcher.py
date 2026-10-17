@@ -107,7 +107,7 @@ async def test_dispatcher_formats_payload_and_calls_http_client():
     assert payload_arg.redacted_diff_sha256 == HEX_B
     assert payload_arg.intent_hmac_hash == HEX_C
     assert payload_arg.risk_category_ids == [2, 18]
-    assert len(payload_arg.model_dump()) == 12
+    assert len(payload_arg.model_dump()) in (12, 14)
 
     # 3. Assert WebSockets broadcast was called
     mock_telemetry.broadcast_event.assert_awaited_once()

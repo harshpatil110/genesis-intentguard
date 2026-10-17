@@ -30,47 +30,49 @@ Violating any one of these breaks the entire aesthetic.
 ## 2. Color System
 
 ### Canvas (Background)
+
 The entire app background must be warm light beige or off-white. Non-negotiable. It should feel like high-quality uncoated paper.
 
-| Token | Value | Tailwind |
-|---|---|---|
-| Primary canvas | `#F7F5F0` | `bg-[#F7F5F0]` / `bg-stone-50` |
-| Alternate canvas | `#F2F0EA` | — |
+| Token            | Value       | Tailwind                           |
+| ---------------- | ----------- | ---------------------------------- |
+| Primary canvas   | `#F7F5F0` | `bg-[#F7F5F0]` / `bg-stone-50` |
+| Alternate canvas | `#F2F0EA` | —                                 |
 
 ### Accent (single soft light blue)
+
 Calm, like a clear sky at noon. Never electric. **Use in 1–2 places per screen maximum. A whisper, not a shout.**
 
-| Token | Value | Tailwind | Use |
-|---|---|---|---|
+| Token          | Value       | Tailwind     | Use                                       |
+| -------------- | ----------- | ------------ | ----------------------------------------- |
 | Primary accent | `#BFDBFE` | `blue-200` | Subtle fills, upload zones, active states |
-| Action accent | `#93C5FD` | `blue-300` | Button borders, highlights |
-| Text on accent | `#1E40AF` | `blue-800` | Readable text on light blue fills |
-| Focus accent | `#60A5FA` | `blue-400` | Focus rings, active indicators only |
+| Action accent  | `#93C5FD` | `blue-300` | Button borders, highlights                |
+| Text on accent | `#1E40AF` | `blue-800` | Readable text on light blue fills         |
+| Focus accent   | `#60A5FA` | `blue-400` | Focus rings, active indicators only       |
 
 ### Text
 
-| Token | Value | Tailwind | Use |
-|---|---|---|---|
-| Primary | `#1C1917` | `stone-900` | Headings, labels, primary content |
-| Secondary | `#78716C` | `stone-500` | Descriptions, placeholders, metadata |
-| Disabled / hint | `#A8A29E` | `stone-400` | Inactive, ghost, helper text |
+| Token           | Value       | Tailwind      | Use                                  |
+| --------------- | ----------- | ------------- | ------------------------------------ |
+| Primary         | `#1C1917` | `stone-900` | Headings, labels, primary content    |
+| Secondary       | `#78716C` | `stone-500` | Descriptions, placeholders, metadata |
+| Disabled / hint | `#A8A29E` | `stone-400` | Inactive, ghost, helper text         |
 
 ### Borders & Dividers
 
-| Token | Value | Tailwind |
-|---|---|---|
-| Default border | `#E7E5E4` | `stone-200` |
-| Subtle divider | `#F5F5F4` | `stone-100` |
-| Emphasis border | `#000000` at 10% opacity | — |
-| Dashed (upload/drop) | — | `border-dashed border-stone-300` |
+| Token                | Value                      | Tailwind                           |
+| -------------------- | -------------------------- | ---------------------------------- |
+| Default border       | `#E7E5E4`                | `stone-200`                      |
+| Subtle divider       | `#F5F5F4`                | `stone-100`                      |
+| Emphasis border      | `#000000` at 10% opacity | —                                 |
+| Dashed (upload/drop) | —                         | `border-dashed border-stone-300` |
 
 ### Surfaces
 
-| Token | Value | Notes |
-|---|---|---|
-| Card | `#FFFFFF` | Sits atop the beige canvas |
-| Elevated | `#FAFAF9` (`stone-50`) | Slightly elevated panels |
-| Input | `#FFFFFF` or transparent | Never grey input backgrounds |
+| Token    | Value                      | Notes                        |
+| -------- | -------------------------- | ---------------------------- |
+| Card     | `#FFFFFF`                | Sits atop the beige canvas   |
+| Elevated | `#FAFAF9` (`stone-50`) | Slightly elevated panels     |
+| Input    | `#FFFFFF` or transparent | Never grey input backgrounds |
 
 ---
 
@@ -93,14 +95,14 @@ font-family: 'JetBrains Mono', 'Fira Code', 'Geist Mono', monospace;
 
 ### Scale & Weight
 
-| Role | Size | Weight | Tracking | Notes |
-|---|---|---|---|---|
-| Display / Hero | 56–72px | 800–900 | -0.03em | |
-| Section heading | 28–36px | 700 | -0.02em | |
-| Component title | 18–22px | 600 | -0.01em | |
-| UI label | 12–13px | 500 | 0.05–0.1em | UPPERCASE |
-| Body | 14–16px | 400 | — | line-height 1.7 |
-| Caption / meta | 11–12px | 400 | — | `stone-400` |
+| Role            | Size     | Weight   | Tracking    | Notes           |
+| --------------- | -------- | -------- | ----------- | --------------- |
+| Display / Hero  | 56–72px | 800–900 | -0.03em     |                 |
+| Section heading | 28–36px | 700      | -0.02em     |                 |
+| Component title | 18–22px | 600      | -0.01em     |                 |
+| UI label        | 12–13px | 500      | 0.05–0.1em | UPPERCASE       |
+| Body            | 14–16px | 400      | —          | line-height 1.7 |
+| Caption / meta  | 11–12px | 400      | —          | `stone-400`   |
 
 ### Typographic Rules
 
@@ -117,12 +119,12 @@ font-family: 'JetBrains Mono', 'Fira Code', 'Geist Mono', monospace;
 
 ### Buttons
 
-| Variant | Styling |
-|---|---|
-| **Primary** | `bg-stone-900 text-white rounded-sm` (2px) or `rounded` (4px), `px-6 py-2.5`, `text-sm font-medium tracking-wide`, hover `bg-stone-700`. Never `rounded-full`. |
-| **Secondary / Outlined** | Transparent, `border border-stone-300`, `text-stone-800`, `rounded-sm`/`rounded`, hover `bg-stone-100 border-stone-400` |
-| **Accent** | `bg-blue-100 border border-blue-200 text-blue-800`, `rounded-sm`/`rounded`, hover `bg-blue-200` |
-| **Ghost / Destructive** | Transparent, `text-stone-500`, hover `text-stone-900 bg-stone-100` |
+| Variant                        | Styling                                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Primary**              | `bg-stone-900 text-white rounded-sm` (2px) or `rounded` (4px), `px-6 py-2.5`, `text-sm font-medium tracking-wide`, hover `bg-stone-700`. Never `rounded-full`. |
+| **Secondary / Outlined** | Transparent, `border border-stone-300`, `text-stone-800`, `rounded-sm`/`rounded`, hover `bg-stone-100 border-stone-400`                                          |
+| **Accent**               | `bg-blue-100 border border-blue-200 text-blue-800`, `rounded-sm`/`rounded`, hover `bg-blue-200`                                                                    |
+| **Ghost / Destructive**  | Transparent, `text-stone-500`, hover `text-stone-900 bg-stone-100`                                                                                                     |
 
 ### Inputs & Forms
 
@@ -176,13 +178,13 @@ font-family: 'JetBrains Mono', 'Fira Code', 'Geist Mono', monospace;
 
 ## 5. Layout & Spacing
 
-| Property | Value |
-|---|---|
-| Max width | `max-w-6xl` (1152px) |
+| Property           | Value                              |
+| ------------------ | ---------------------------------- |
+| Max width          | `max-w-6xl` (1152px)             |
 | Horizontal padding | `px-6` mobile, `px-12` desktop |
-| Section spacing | `py-16` to `py-24` |
-| Grid gaps | `gap-4` to `gap-8` |
-| Spacing grid | 8px |
+| Section spacing    | `py-16` to `py-24`             |
+| Grid gaps          | `gap-4` to `gap-8`             |
+| Spacing grid       | 8px                                |
 
 **Whitespace is design.** When in doubt, add more padding. The beige canvas should be generously visible.
 
@@ -226,11 +228,11 @@ transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 
 ### Data Tables
 
-| Part | Styling |
-|---|---|
+| Part       | Styling                                                          |
+| ---------- | ---------------------------------------------------------------- |
 | Header row | `bg-stone-50 text-xs uppercase tracking-widest text-stone-500` |
-| Body rows | `bg-white border-b border-stone-100 text-sm text-stone-700` |
-| Row hover | `bg-stone-50/50` |
+| Body rows  | `bg-white border-b border-stone-100 text-sm text-stone-700`    |
+| Row hover  | `bg-stone-50/50`                                               |
 
 ---
 
@@ -238,11 +240,11 @@ transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 
 Design mobile-first, but keep it premium. The warm beige canvas, crisp typography, and generous whitespace must survive every viewport.
 
-| Breakpoint | Behavior |
-|---|---|
-| Mobile (< 640px) | Single column, reduce heading scale 30–40%, full-width cards, touch targets min 44px, beige canvas maintained |
-| Tablet (640–1024px) | 2-column grids, mid-scale typography |
-| Desktop (> 1024px) | Full layout, 3–4 column grids, large editorial headings |
+| Breakpoint           | Behavior                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Mobile (< 640px)     | Single column, reduce heading scale 30–40%, full-width cards, touch targets min 44px, beige canvas maintained |
+| Tablet (640–1024px) | 2-column grids, mid-scale typography                                                                           |
+| Desktop (> 1024px)   | Full layout, 3–4 column grids, large editorial headings                                                       |
 
 ---
 
@@ -266,17 +268,17 @@ Design mobile-first, but keep it premium. The warm beige canvas, crisp typograph
 
 ## 11. Quick Reference
 
-| Element | Do | Don't |
-|---|---|---|
-| Background | `bg-[#F7F5F0]` warm beige | White, grey, dark, or gradients |
-| Primary text | `text-stone-900` | Soft greys or colored text |
-| Accent | Soft `blue-200` / `blue-300` | Purple, teal, green, neon |
-| Buttons | `rounded-sm` flat black or outlined | `rounded-full` pill, gradient |
-| Cards | White + `border-stone-200` + `shadow-sm` | Glassmorphism, glow, dark cards |
-| Inputs | Flat white, `border-stone-300`, small radius | Grey bg, heavy radius, glow focus |
-| Headings | 700–900 weight, negative tracking | Medium weight, generic sans |
-| Loading | Simple spinner or `blue-200` pulse | Sci-fi bars, neon rings |
-| Shadows | `shadow-sm` only | `shadow-xl`, colored shadows |
-| Radius | `rounded-sm` to `rounded-lg`, contextual | `rounded-full` on structural UI |
-| Motion | Smooth ease, 300–600ms | Spring bounce, particle effects |
-| Icons | Outline, 1.5px stroke, `stone-500` | Filled, multicolor, emoji |
+| Element      | Do                                             | Don't                             |
+| ------------ | ---------------------------------------------- | --------------------------------- |
+| Background   | `bg-[#F7F5F0]` warm beige                    | White, grey, dark, or gradients   |
+| Primary text | `text-stone-900`                             | Soft greys or colored text        |
+| Accent       | Soft `blue-200` / `blue-300`               | Purple, teal, green, neon         |
+| Buttons      | `rounded-sm` flat black or outlined          | `rounded-full` pill, gradient   |
+| Cards        | White + `border-stone-200` + `shadow-sm`   | Glassmorphism, glow, dark cards   |
+| Inputs       | Flat white, `border-stone-300`, small radius | Grey bg, heavy radius, glow focus |
+| Headings     | 700–900 weight, negative tracking             | Medium weight, generic sans       |
+| Loading      | Simple spinner or `blue-200` pulse           | Sci-fi bars, neon rings           |
+| Shadows      | `shadow-sm` only                             | `shadow-xl`, colored shadows    |
+| Radius       | `rounded-sm` to `rounded-lg`, contextual   | `rounded-full` on structural UI |
+| Motion       | Smooth ease, 300–600ms                        | Spring bounce, particle effects   |
+| Icons        | Outline, 1.5px stroke, `stone-500`           | Filled, multicolor, emoji         |

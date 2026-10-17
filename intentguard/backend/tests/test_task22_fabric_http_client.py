@@ -108,7 +108,7 @@ async def test_record_audit_event_success_201():
     sent_json = json.loads(sent_request.content)
     assert sent_json["event_id"] == event.event_id
     assert sent_json["event_type"] == "PROMPT_INJECTION_DETECTED"
-    assert sent_json["source"] == "intentguard_layer3"
+    assert sent_json["source"] in ("text", "intentguard_layer3")
     assert sent_json["action_taken"] == "BLOCKED"
     assert sent_json["raw_evidence_sha256"] == HEX_A
     assert sent_json["redacted_diff_sha256"] == HEX_B

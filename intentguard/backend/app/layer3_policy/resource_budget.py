@@ -59,7 +59,7 @@ class BudgetConfig(BaseModel):
     max_tool_iterations_per_task: int = 8
     max_identical_tool_calls: int = 3
     max_file_upload_bytes: int = 15 * 1024 * 1024  # 15 MB
-    max_execution_timeout_sec: float = 45.0
+    max_execution_timeout_sec: float = 900.0
     max_memory_mb: int = 512
 
 
@@ -148,7 +148,7 @@ class ResourceBudgetEnforcer:
     2. Micro-privilege task iteration cap (default: max 8 tool calls per task).
     3. Infinite tool loop detector (default: aborts on 3rd identical tool invocation).
     4. Payload size ceiling (default: 15 MB).
-    5. Task execution timeout (default: 45.0s).
+    5. Task execution timeout (default: 900.0s).
     6. Micro-privilege permission downgrade on ingestion of untrusted data (Risk #17).
     """
 
@@ -296,7 +296,7 @@ class ResourceBudgetEnforcer:
         self, session_id: str, now: Optional[float] = None
     ) -> BudgetCheckResult:
         """
-        Checks if task execution time exceeds max_execution_timeout_sec (45s).
+        Checks if task execution time exceeds max_execution_timeout_sec (900s).
         """
         state = self.get_or_create_session(session_id, now=now)
         current_time = now if now is not None else time.time()

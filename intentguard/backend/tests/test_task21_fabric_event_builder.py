@@ -70,7 +70,7 @@ def test_valid_12_field_payload_matches_exact_contract():
     ev = FabricAuditEventPayload(**VALID_BASE_KWARGS)
     dumped = ev.model_dump()
 
-    assert len(dumped) == 12, f"Expected 12 keys, got {len(dumped)}: {list(dumped.keys())}"
+    assert len(dumped) == 14, f"Expected 14 keys, got {len(dumped)}: {list(dumped.keys())}"
 
     assert dumped["event_id"] == "evt-001"
     assert dumped["timestamp"] == "2026-10-15T12:00:00Z"
@@ -84,14 +84,15 @@ def test_valid_12_field_payload_matches_exact_contract():
     assert dumped["intent_hmac_hash"] == HEX_C_64
     assert dumped["risk_category_ids"] == [2, 18]
     assert dumped["threat_detected"] is True
-    assert ev.event_type == "PROMPT_INJECTION_DETECTED"
-    assert ev.source == "intentguard_layer3"
+    assert dumped["event_type"] == "PROMPT_INJECTION_DETECTED"
+    assert dumped["source"] == "text"
 
     # Verify exact key names (no extra or missing fields)
     expected_keys = {
         "event_id", "timestamp", "buyer_id", "supplier_id", "input_modality",
         "action_taken", "policy_reference", "raw_evidence_sha256",
         "redacted_diff_sha256", "intent_hmac_hash", "risk_category_ids", "threat_detected",
+        "event_type", "source",
     }
     assert set(dumped.keys()) == expected_keys
 

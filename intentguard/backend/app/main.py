@@ -54,12 +54,16 @@ app.include_router(openclaw_sandbox_router)
 # Mount Mock Hyperledger Fabric HTTP Server (Task 23)
 from app.blockchain_client.mock_fabric_server import mock_fabric_router
 
-if settings.BLOCKCHAIN_USE_MOCK:
-    app.include_router(
-        mock_fabric_router,
-        prefix="/mock-blockchain/api/v1",
-        tags=["Mock Blockchain"],
-    )
+app.include_router(
+    mock_fabric_router,
+    prefix="/mock-blockchain/api/v1",
+    tags=["Mock Blockchain"],
+)
+app.include_router(
+    mock_fabric_router,
+    prefix="/mock-blockchain",
+    tags=["Mock Blockchain"],
+)
 
 
 # ---------------------------------------------------------------------------

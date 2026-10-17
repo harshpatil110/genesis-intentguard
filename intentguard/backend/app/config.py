@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     MAX_REQUESTS_PER_MINUTE: int = 30
     MAX_TOOL_ITERATIONS_PER_TASK: int = 8
     MAX_FILE_UPLOAD_MB: int = 15
-    MAX_EXECUTION_TIMEOUT_SECONDS: int = 45
+    MAX_EXECUTION_TIMEOUT_SECONDS: int = 900
 
     # Comma-separated; use allowed_domains_list property for List[str]
     ALLOWED_OUTBOUND_DOMAINS: str = "localhost,127.0.0.1,api.groq.com"

@@ -23,6 +23,7 @@ Never executes Fabric CLI commands directly; communicates exclusively via HTTP.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -46,7 +47,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # HTTP endpoint constants
 # ---------------------------------------------------------------------------
-_AUDIT_EVENTS_PATH = "/api/v1/audit-events"
+_AUDIT_EVENTS_PATH = "/audit-events"
 
 # Actions that indicate a high-risk security block requiring fail-closed behavior
 _HIGH_RISK_ACTIONS: frozenset[str] = frozenset({
@@ -195,22 +196,30 @@ class FabricGatewayHttpClient:
             BlockchainCircuitBreakerException — HTTP 5xx (high-risk events)
             BlockchainAPIError               — all other unexpected errors
         """
-        if hasattr(event, "to_chaincode_json_dict"):
-            payload_dict = event.to_chaincode_json_dict()
-        elif hasattr(event, "model_dump"):
-            payload_dict = event.model_dump()
-        else:
-            payload_dict = dict(event)
+        url = f"{self.api_base_url}/audit-events"
+        headers = {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
+        payload_dict = event.model_dump()
 
-        headers = self._auth_headers()
+        print("\n" + "=" * 50)
+        print(f"🚀 [BLOCKCHAIN DISPATCH] Sending to {url}")
+        print(f"🔑 [HEADERS] {headers}")
+        print(f"📦 [PAYLOAD] {json.dumps(payload_dict, indent=2)}")
 
         try:
             response = await self._client.post(
-                _AUDIT_EVENTS_PATH,
+                url,
                 json=payload_dict,
                 headers=headers,
             )
+            print(f"📥 [RESPONSE CODE]: {response.status_code}")
+            print(f"📜 [RESPONSE BODY]: {response.text}")
+            print("=" * 50 + "\n")
         except httpx.RequestError as exc:
+            print(f"❌ [BLOCKCHAIN ERROR]: {str(exc)}")
+            print("=" * 50 + "\n")
             logger.error("[IntentGuard Fabric] Network error posting event %s: %s", event.event_id, exc)
             self._buffer_and_maybe_circuit_break(event, status_code=503, detail=str(exc))
             # If _is_high_risk() above did not raise (safe events), still surface the error
@@ -218,18 +227,25 @@ class FabricGatewayHttpClient:
                 f"Network error contacting Fabric API: {exc}",
                 status_code=503,
             ) from exc
+        except Exception as e:
+            print(f"❌ [BLOCKCHAIN ERROR]: {str(e)}")
+            print("=" * 50 + "\n")
+            raise
 
         status = response.status_code
 
-        if status == 201:
+        if status in (200, 201):
             try:
                 data: Dict[str, Any] = response.json()
             except Exception as parse_exc:
                 raise BlockchainAPIError(
-                    f"HTTP 201 but response body is not valid JSON: {parse_exc}",
-                    status_code=201,
+                    f"HTTP {status} but response body is not valid JSON: {parse_exc}",
+                    status_code=status,
                     response_body=response.text,
                 ) from parse_exc
+
+            if "transaction_id" not in data and "tx_id" in data:
+                data["transaction_id"] = str(data["tx_id"])
 
             if not data.get("recorded"):
                 raise BlockchainAPIError(

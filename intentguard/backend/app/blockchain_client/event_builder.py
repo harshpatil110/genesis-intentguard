@@ -138,6 +138,18 @@ class FabricAuditEventPayload(BaseModel):
             data.pop("source", None)
         return data
 
+    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+        """
+        Dumps the model dictionary, ensuring event_type and source are mapped
+        from internal fields (threat_detected, input_modality) for remote API compatibility.
+        """
+        d = super().model_dump(*args, **kwargs)
+        if "event_type" not in d:
+            d["event_type"] = self.event_type
+        if "source" not in d:
+            d["source"] = getattr(self, "input_modality", None) or self.source
+        return d
+
     def to_chaincode_json_dict(self) -> Dict[str, Any]:
         """
         Maps internal fields to the exact expected keys of the teammate's Node.js Fabric REST API / chaincode:
