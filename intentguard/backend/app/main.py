@@ -146,32 +146,7 @@ async def verify_blockchain_connection(
                 f"Latency: {latency_ms}ms | Body: {resp.text}"
             )
 
-            test_dispatch_result: Optional[Dict[str, Any]] = None
-            if send_test_ping and resp.status_code in (200, 201):
-                try:
-                    async with FabricGatewayHttpClient(api_base_url=target_url, api_key=api_key) as f_client:
-                        test_evt = FabricAuditEventBuilder.build_layer3_threat_event(
-                            session_id=f"ping-{int(time.time())}",
-                            action_taken="BLOCKED",
-                            raw_evidence="Cross-laptop live verification ping test",
-                            reason="Remote Fabric node ping from IntentGuard frontend",
-                            risk_category_ids=[2, 18],
-                        )
-                        dispatch_res = await f_client.record_audit_event(test_evt)
-                        test_dispatch_result = {
-                            "status": "success",
-                            "event_id": test_evt.event_id,
-                            "transaction_id": dispatch_res.get("transaction_id"),
-                            "receipt": dispatch_res,
-                        }
-                except Exception as dispatch_err:
-                    test_dispatch_result = {
-                        "status": "dispatch_failed",
-                        "error": str(dispatch_err),
-                    }
-
-            _safe_print("=" * 50 + "\n")
-            return {
+            response_payload: Dict[str, Any] = {
                 "connected": resp.status_code in (200, 201),
                 "target_url": target_url,
                 "status_code": resp.status_code,
@@ -179,8 +154,67 @@ async def verify_blockchain_connection(
                 "remote_response": body_json,
                 "mode": "REMOTE_FABRIC_NODE" if not settings.BLOCKCHAIN_USE_MOCK else "MOCK_NODE",
                 "checked_at": checked_at,
-                "test_dispatch": test_dispatch_result,
+                "test_dispatch": None,
+                "test_ping_dispatched": False,
             }
+
+            if send_test_ping:
+                import uuid
+                import hashlib
+
+                # Generate a 64-char hex hash for the test
+                dummy_hash = hashlib.sha256(b"live_demo_test_ping").hexdigest()
+                test_id = f"demo-ping-{uuid.uuid4().hex[:8]}"
+
+                payload = {
+                    "event_id": test_id,
+                    "event_type": "PROMPT_INJECTION_DETECTED",
+                    "source": "dashboard_test_ping",
+                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "buyer_id": "buyer-01",
+                    "supplier_id": "supplier-01",
+                    "input_modality": "text",
+                    "action_taken": "BLOCKED",
+                    "policy_reference": "policy-v1",
+                    "raw_evidence_sha256": dummy_hash,
+                    "redacted_diff_sha256": dummy_hash,
+                    "intent_hmac_hash": dummy_hash,
+                    "risk_category_ids": [2, 18],
+                    "threat_detected": True,
+                }
+
+                post_url = f"{settings.BLOCKCHAIN_API_BASE_URL.rstrip('/')}/audit-events"
+                post_headers = {
+                    "x-api-key": settings.BLOCKCHAIN_API_KEY,
+                    "Content-Type": "application/json",
+                }
+
+                _safe_print(f"🚀 [TEST PING] Sending mock audit event {test_id} to {post_url}")
+                try:
+                    post_response = await client.post(post_url, headers=post_headers, json=payload)
+                    post_response.raise_for_status()
+
+                    response_payload["test_ping_dispatched"] = True
+                    response_payload["test_event_id"] = test_id
+                    try:
+                        post_json = post_response.json()
+                    except Exception:
+                        post_json = {"raw": post_response.text}
+                    response_payload["test_dispatch"] = {
+                        "status": "success",
+                        "event_id": test_id,
+                        "transaction_id": post_json.get("transaction_id") or post_json.get("tx_id"),
+                        "receipt": post_json,
+                    }
+                except Exception as dispatch_err:
+                    response_payload["test_ping_dispatched"] = False
+                    response_payload["test_dispatch"] = {
+                        "status": "dispatch_failed",
+                        "error": str(dispatch_err),
+                    }
+
+            _safe_print("=" * 50 + "\n")
+            return response_payload
 
     except Exception as exc:
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
@@ -197,6 +231,7 @@ async def verify_blockchain_connection(
             "mode": "REMOTE_FABRIC_NODE" if not settings.BLOCKCHAIN_USE_MOCK else "MOCK_NODE",
             "checked_at": checked_at,
             "test_dispatch": None,
+            "test_ping_dispatched": False,
         }
 
 
@@ -211,24 +246,54 @@ async def send_test_audit_event() -> Dict[str, Any]:
     start = time.perf_counter()
     checked_at = datetime.now(timezone.utc).isoformat()
 
+    import uuid
+    import hashlib
+
+    dummy_hash = hashlib.sha256(b"live_demo_test_event").hexdigest()
+    test_id = f"demo-pitch-{uuid.uuid4().hex[:8]}"
+
+    payload = {
+        "event_id": test_id,
+        "event_type": "PROMPT_INJECTION_DETECTED",
+        "source": "mentor_pitch_demo",
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "buyer_id": "buyer-01",
+        "supplier_id": "supplier-01",
+        "input_modality": "text",
+        "action_taken": "BLOCKED",
+        "policy_reference": "policy-v1",
+        "raw_evidence_sha256": dummy_hash,
+        "redacted_diff_sha256": dummy_hash,
+        "intent_hmac_hash": dummy_hash,
+        "risk_category_ids": [2, 18],
+        "threat_detected": True,
+    }
+
+    post_url = f"{target_url}/audit-events"
+    post_headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+
     try:
-        async with FabricGatewayHttpClient(api_base_url=target_url, api_key=api_key) as f_client:
-            test_evt = FabricAuditEventBuilder.build_layer3_threat_event(
-                session_id=f"demo-pitch-{int(time.time())}",
-                action_taken="BLOCKED",
-                raw_evidence="Live Mentor Pitch: Cross-laptop Fabric Ledger verification",
-                reason="Live test event dispatched from IntentGuard UI to Peer PC",
-                risk_category_ids=[2, 14, 18],
-            )
-            res = await f_client.record_audit_event(test_evt)
+        _safe_print(f"🚀 [TEST PING] Sending mock audit event {test_id} to {post_url}")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(post_url, headers=post_headers, json=payload)
+            res.raise_for_status()
             latency_ms = round((time.perf_counter() - start) * 1000, 2)
+            try:
+                res_data = res.json()
+            except Exception:
+                res_data = {"raw": res.text}
+
+            tx_id = res_data.get("transaction_id") or res_data.get("tx_id")
             return {
                 "success": True,
                 "target_url": target_url,
                 "latency_ms": latency_ms,
-                "event_id": test_evt.event_id,
-                "transaction_id": res.get("transaction_id"),
-                "receipt": res,
+                "event_id": test_id,
+                "transaction_id": tx_id,
+                "receipt": res_data,
                 "dispatched_at": checked_at,
             }
     except Exception as exc:
