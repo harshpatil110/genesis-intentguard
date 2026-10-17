@@ -56,7 +56,7 @@ if shutil.which("tesseract") is None:
 
 # Injection keywords across spoken audio and video frames
 _MEDIA_INJECTION_KEYWORD_RE = re.compile(
-    r"(?i)\b(?:ignore\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?|restrictions?|the\s+rest\s+of\s+this\s+audio)|"
+    r"(?i)(?:\b(?:ignore\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?|restrictions?|the\s+rest\s+of\s+this\s+audio)|"
     r"system\s+(?:override|update|prompt)|"
     r"override\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?)|"
     r"disregard\s+(?:all\s+)?(?:previous\s+)?instructions?|"
@@ -64,7 +64,10 @@ _MEDIA_INJECTION_KEYWORD_RE = re.compile(
     r"delete\s+(?:all\s+)?(?:files?|calendar|database|records?)|"
     r"transfer\s+(?:all\s+)?(?:funds?|money|balance)|"
     r"wire\s+(?:all\s+)?(?:funds?|money)|"
-    r"send\s+api\s+key|admin\s+override|bypass\s+security)\b",
+    r"send\s+api\s+key|admin\s+override|bypass\s+security|"
+    r"exfiltrate\s+(?:all|data|logs)|"
+    r"steal\s+(?:credentials|tokens|keys))\b|"
+    r"\[(?:hidden\s+voice|spoken\s+(?:command|override)|voice\s+injection|ultrasonic\s+(?:directive|command)|subliminal\s+(?:voice|command))\])",
     re.I,
 )
 
@@ -169,6 +172,8 @@ class AudioVideoDeCloaker:
 
         sanitized_transcript = "".join(sanitized_parts).strip()
         return sanitized_transcript, findings
+
+    redact_spoken_injections = redact_malicious_transcript
 
     # ───────────────────────────────────────────────────────────────────────
     # 3. Video Frame Flashed-Text OCR (1 frame per second)

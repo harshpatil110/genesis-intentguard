@@ -581,36 +581,50 @@ async def intercept_inbound_data(req: InboundInterceptRequest) -> InboundInterce
         except Exception as exc:
             logger.warning("Error running Image de-cloaker: %s", exc)
 
-    elif is_media_modality and req.raw_content_base64:
+    elif is_media_modality and (req.raw_content_base64 or req.raw_content_text):
         try:
-            decoded_bytes = base64.b64decode(req.raw_content_base64)
-            # Check for disguised Windows executable header (MZ)
-            if decoded_bytes.startswith(_MZ_MAGIC):
-                threat_detected = True
-                if 2 not in risk_category_ids:
-                    risk_category_ids.append(2)
-                cloaked_threats.append({
-                    "pattern": "MZ_HEADER",
-                    "match": "Disguised Windows executable (MZ header) detected",
-                    "position": 0,
-                })
-            else:
-                mod_str = req.modality.value if hasattr(req.modality, "value") else str(req.modality)
-                decloak_res = audio_video_decloaker.decloak_media_bytes(
-                    file_bytes=decoded_bytes,
-                    modality=mod_str,
-                    filename=req.source_uri_or_filename,
-                    metadata=req.metadata,
-                )
-                raw_evidence_sha256 = decloak_res.raw_evidence_sha256
-                if decloak_res.threat_detected:
+            if req.raw_content_base64:
+                decoded_bytes = base64.b64decode(req.raw_content_base64)
+                # Check for disguised Windows executable header (MZ)
+                if decoded_bytes.startswith(_MZ_MAGIC):
                     threat_detected = True
-                    for r_id in decloak_res.risk_category_ids:
-                        if r_id not in risk_category_ids:
-                            risk_category_ids.append(r_id)
-                    for finding in decloak_res.cloaked_findings:
-                        cloaked_threats.append(finding.model_dump())
-                text_to_scan = decloak_res.visible_clean_text
+                    if 2 not in risk_category_ids:
+                        risk_category_ids.append(2)
+                    cloaked_threats.append({
+                        "pattern": "MZ_HEADER",
+                        "match": "Disguised Windows executable (MZ header) detected",
+                        "position": 0,
+                    })
+                else:
+                    mod_str = req.modality.value if hasattr(req.modality, "value") else str(req.modality)
+                    decloak_res = audio_video_decloaker.decloak_media_bytes(
+                        file_bytes=decoded_bytes,
+                        modality=mod_str,
+                        filename=req.source_uri_or_filename,
+                        metadata=req.metadata,
+                    )
+                    raw_evidence_sha256 = decloak_res.raw_evidence_sha256
+                    if decloak_res.threat_detected:
+                        threat_detected = True
+                        for r_id in decloak_res.risk_category_ids:
+                            if r_id not in risk_category_ids:
+                                risk_category_ids.append(r_id)
+                        for finding in decloak_res.cloaked_findings:
+                            cloaked_threats.append(finding.model_dump())
+                    text_to_scan = decloak_res.visible_clean_text
+            elif req.raw_content_text:
+                mod_str = req.modality.value if hasattr(req.modality, "value") else str(req.modality)
+                sanitized_text, findings = audio_video_decloaker.redact_malicious_transcript(
+                    req.raw_content_text, modality=mod_str
+                )
+                if findings:
+                    threat_detected = True
+                    for f in findings:
+                        for rid in f.risk_category_ids:
+                            if rid not in risk_category_ids:
+                                risk_category_ids.append(rid)
+                        cloaked_threats.append(f.model_dump())
+                text_to_scan = sanitized_text
         except Exception as exc:
             logger.warning("Error running Audio/Video de-cloaker: %s", exc)
 
